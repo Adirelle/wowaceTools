@@ -128,9 +128,10 @@ foreach($handles as $key => $mh) {
 	$addon =& $addons[$key];
   $rss = curl_multi_getcontent($mh);
   curl_close($mh);
-	$xml = @new SimpleXMLElement($rss);
-	if(!isset($xml)) {
-		printf("Could not parse XML for %s from http://www.wowace.com/addons/%s/files.rss !", $addon['name'],$addon['project']);
+  try {
+		$xml = new SimpleXMLElement($rss);
+	} catch(Exception $e) {
+		printf("Could not parse XML for %s from http://www.wowace.com/addons/%s/files.rss: %s !", $addon['name'],$addon['project'], $e);
 		unset($addons[key]);
 		continue;
 	}
@@ -161,7 +162,7 @@ $searchOrder = array(
 );
 
 // Selected version to be installed
-foreach($addons as $project => &$addon) {
+foreach($addons as $project => $addon) {
 	$selected = false;
 	foreach($searchOrder[$addon['kind']] as $key) {
 		if(isset($addon['available'][$key])) {
@@ -170,7 +171,7 @@ foreach($addons as $project => &$addon) {
 		}
 	}
 	if(!$selected) {
-		$addon['failure'] = "no suitable version found.";
+		$addons[$project]['failure'] = "no suitable version found.";
 		continue;
 	}
 	if($addon['version'] == $selected['version']) {
@@ -181,8 +182,8 @@ foreach($addons as $project => &$addon) {
 		// Need update
 		printf("%s: %s ===> %s\n", $addon['name'], $addon['version'], $selected['version']);
 		unset($addon['available']);
-		$addon['selected'] = $selected['link'];
-		$addon['newversion'] = $selected['version'];
+		$addons[$project]['selected'] = $selected['link'];
+		$addons[$project]['newversion'] = $selected['version'];
 	}
 }
 
@@ -203,7 +204,7 @@ printf("Downloading %d files\n", count($addons));
 
 $mch = curl_multi_init();
 $projects = array();
-foreach($addons as $project => &$addon) {
+foreach($addons as $project => $addon) {
 	$mh = curl_init($addon['selected']);
 	curl_setopt($mh, CURLOPT_RETURNTRANSFER, 1);
 	curl_setopt($mh, CURLOPT_FOLLOWLOCATION, true);	
@@ -273,12 +274,12 @@ curl_multi_close($mch);
 
 print("\n");
 
-foreach($addons as $key=>&$addon) {
+foreach($addons as $key => $addon) {
 	if(isset($addon['fh'])) {
 		$fh = $addon['fh'];
 		fflush($fh);
 		fclose($fh);
-		unset($addon['fh']);
+		unset($addons[$key]['fh']);
 	}
 	if(isset($addon['failure'])) {
 		printf("%s: %s\n", $addon['name'], $addon['failure']);
