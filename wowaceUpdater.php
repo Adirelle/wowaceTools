@@ -1,11 +1,38 @@
 #!/usr/bin/php
 <?php
-error_reporting(-1);
 define("DIR_SEP", DIRECTORY_SEPARATOR);
+error_reporting(-1);
 
+// Check requirements
+$failed = false;
+@list($major, $minor) = explode('.', PHP_VERSION);
+if($major < 5 || ($major == 5 && $minor < 2)) {
+	print("PHP >= 5.2 is required !\n");
+	$failed = true;
+}
+foreach(array('ZIP', 'cURL', 'SimpleXML') as $ext) {
+	if(!extension_loaded($ext)) {
+		@dl($ext);
+		if(!extension_loaded($ext)) {
+			printf("The %s extension is requird !\n", $ext);
+			$failed = true;
+		}
+	}
+}
+if($failed) exit(1);
+
+//===== START OF CONFIGURATION =====
+
+// This is where your addons live
 $baseDir = "/home/guillaume/AddOns";
+
+// This is where old versions will be moved (no pruning)
 $backupDir = $baseDir.DIR_SEP.'.backup'.DIR_SEP;
+
+// Must be one of 'release', 'beta' or 'alpha'.
 $defaultKind = 'beta';
+
+//===== END OF CONFIGURATION =====
 
 function cleanupVersion($version, $addon)  {
 	return preg_replace('/^('.preg_quote($addon['name']).'|'.preg_quote($addon['project']).')\s*/i', '', $version);
@@ -101,9 +128,17 @@ foreach($handles as $key => $mh) {
 	$addon =& $addons[$key];
   $rss = curl_multi_getcontent($mh);
   curl_close($mh);
-	$xml = new SimpleXMLElement($rss);
+	$xml = @new SimpleXMLElement($rss);
+	if(!isset($xml)) {
+		printf("Could not parse XML for %s from http://www.wowace.com/addons/%s/files.rss !", $addon['name'],$addon['project']);
+		unset($addons[key]);
+		continue;
+	}
 	$items = @$xml->channel->item;
-	if(!isset($items)) continue;
+	if(!isset($items)) {
+		printf("Malformed RSS feed for %s from %s !", $addon['name'], 'http://www.wowace.com/addons/'.$addon['project'].'/files.rss');
+		continue;
+	}
 	foreach($items as $item) {
 		unset($item->description);
 		preg_match('/^(.+)(-nolib)?$/', cleanupVersion((string)$item->title, $addon), $parts);
