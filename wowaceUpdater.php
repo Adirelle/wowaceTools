@@ -32,6 +32,9 @@ $backupDir = $baseDir.DIR_SEP.'.backup'.DIR_SEP;
 // Must be one of 'release', 'beta' or 'alpha'.
 $defaultKind = 'beta';
 
+// Disable to use embedded addons
+$wantNolib = true;
+
 //===== END OF CONFIGURATION =====
 
 function cleanupVersion($version, $addon)  {
@@ -99,6 +102,7 @@ foreach($addons as $key => $addon) {
 	$mh = curl_init('http://www.wowace.com/addons/'.$addon['project'].'/files.rss');
 	curl_setopt($mh, CURLOPT_RETURNTRANSFER, 1);
 	curl_setopt($mh, CURLOPT_FOLLOWLOCATION, true);	
+	curl_setopt($mh, CURLOPT_FAILONERROR, true);
 	curl_multi_add_handle($mch, $mh);
 	$handles[$key] = $mh;
 	$names[intval($mh)] = $addon['name'];
@@ -144,12 +148,14 @@ foreach($handles as $key => $mh) {
 		unset($item->description);
 		preg_match('/^(.+)(-nolib)?$/', cleanupVersion((string)$item->title, $addon), $parts);
 		@list(, $version, $nolib) = $parts;
-		$kind = guessReleaseType($version);
-		if(!isset($addon['available'][$kind.$nolib])) {
-			$addon['available'][$kind.$nolib] = array(
-				'version' => $version,
-				'link' => (string)$item->link,
-			);
+		if(!isset($nolib) || $wantNolib) {
+			$kind = guessReleaseType($version);
+			if(!isset($addon['available'][$kind.$nolib])) {
+				$addon['available'][$kind.$nolib] = array(
+					'version' => $version,
+					'link' => (string)$item->link,
+				);
+			}
 		}
 	}
 }
@@ -207,7 +213,8 @@ $projects = array();
 foreach($addons as $project => $addon) {
 	$mh = curl_init($addon['selected']);
 	curl_setopt($mh, CURLOPT_RETURNTRANSFER, 1);
-	curl_setopt($mh, CURLOPT_FOLLOWLOCATION, true);	
+	curl_setopt($mh, CURLOPT_FOLLOWLOCATION, true);
+	curl_setopt($mh, CURLOPT_FAILONERROR, true);	
 	curl_multi_add_handle($mch, $mh);
 	$projects[intval($mh)] = $project;
 }
@@ -244,6 +251,7 @@ do {
 							if($mh) {
 								$addon['url'] = $url;
 								curl_setopt($mh, CURLOPT_FOLLOWLOCATION, true);	
+								curl_setopt($mh, CURLOPT_FAILONERROR, true);
 								curl_setopt($mh, CURLOPT_FILE, $fh);	
 								curl_multi_add_handle($mch, $mh);
 								$projects[intval($mh)] = $project;	
