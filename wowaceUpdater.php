@@ -227,24 +227,37 @@ do {
     		if(isset($addon['selected'])) {
   			  $page = curl_multi_getcontent($mh);
 				  curl_close($mh);
-				  if(preg_match('@<dd><a href="(http://.+?/.+?\.zip)">(.+?\.zip)</a></dd>@i', $page, $parts)) {
+				  if(empty($page)) {
+				  	$addon['failure'] = sprintf('Download of %s failed', $addon['selected']);
+				  	$done++;
+				  } elseif(preg_match('@<dd><a href="(http://.+?/.+?\.zip)">(.+?\.zip)</a></dd>@i', $page, $parts)) {
 				  	@list(, $url, $filename) = $parts;
-				  	//$tmpfile = tempnam('/tmp', $filename.'-');
-				  	//register_shutdown_function('unlink', $tmpfile);
-				  	$tmpfile = '/tmp/'.$filename;
+				  	$tmpfile = tempnam('/tmp', $filename.'-');
+				  	register_shutdown_function('unlink', $tmpfile);
+				  	//$tmpfile = '/tmp/'.$filename;
 				  	$fh = fopen($tmpfile, 'w');
-				  	$addon['orig-filename'] = $filename;
-				  	$addon['filename'] = $tmpfile;
-				  	$addon['fh'] = $fh;
-				  	$addon['url'] = $url;
-						$mh = curl_init($url);
-						curl_setopt($mh, CURLOPT_FOLLOWLOCATION, true);	
-						curl_setopt($mh, CURLOPT_FILE, $fh);	
-						curl_multi_add_handle($mch, $mh);
-						$projects[intval($mh)] = $project;	
-						$active = true;			  	
+				  	if($fh) {
+							$addon['fh'] = $fh;
+							$addon['orig-filename'] = $filename;
+							$addon['filename'] = $tmpfile;
+							$mh = curl_init($url);
+							if($mh) {
+								$addon['url'] = $url;
+								curl_setopt($mh, CURLOPT_FOLLOWLOCATION, true);	
+								curl_setopt($mh, CURLOPT_FILE, $fh);	
+								curl_multi_add_handle($mch, $mh);
+								$projects[intval($mh)] = $project;	
+								$active = true;			  	
+							} else {
+								$addon['failure'] = sprintf("cannot download %s", $url);
+								$done++;
+							}
+						} else {
+							$addon['failure'] = sprintf("cannot create file %s", $tmpfile);
+							$done++;
+				  	}
 				  } else {
-				  	$addon['failure'] = sprintf('cannot find the zip file in %s', $addon['selected']);
+				  	$addon['failure'] = sprintf('cannot find the package URL in %s', $addon['selected']);
 				  	$done++;
 				  }
     			unset($addon['selected']);
@@ -260,7 +273,7 @@ do {
     		$addon['failure'] = curl_error($mh);
 			  curl_close($mh);    		
    			unset($addon['selected']);
-    		unset($addon['fh']);
+    		unset($addon['url']);
     	}
     }
 		if($done != $lastdone) {
