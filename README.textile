@@ -1,0 +1,32 @@
+This little PHP scripts updates your addons installed from the wowace and curseforge websites.
+
+It requires PHP5 >= 5.2 and the following extension: SimpleXML, cURL and ZIP.
+
+(On debian-based linuxes, the packages php5-cli and php5-curl should be enough).
+
+h2. Global configuration
+
+The global configuration is at the start of the script.
+
+h3. Installation path
+
+$baseDir should point to the "AddOns" directory.
+
+h3. Backup path
+
+$backupDir points to the directory where backup will be saved. By default this is "$baseDir/.backup". Old versions of the addons will be moved there. There is no pruning at this moment. All directories belonging to the same addon will be moved into a directory name "project-version".
+
+h3. Default kind of installation
+
+$defaultKind should be either "release", "beta" or "alpha". This used to selected the kind of release you want to install.
+
+h2. Per-addon configuration
+
+The script will ignore any addon directory containing one of these file or directory :
+
+* .git
+* .svn
+* .freeze
+
+You can override the default kind of installation by creating an empty file named either ".release", ".beta" or ".alpha" in the addon directory.
+
