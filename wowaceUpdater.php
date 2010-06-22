@@ -347,9 +347,9 @@ foreach($addons as $key => $addon) {
 	for($index = 0; $index < $za->numFiles; $index++) {
 		$entry = $za->statIndex($index);
 		if(preg_match('@^([^/]+)/\1\.toc$@i', $entry['name'], $parts)) {
-			file_put_contents($parts[1].DIR_SEP.'.version', $addon['newversion']);
+			file_put_contents($baseDir.DIR_SEP.$parts[1].DIR_SEP.'.version', $addon['newversion']);
 			if($addon['kind'] != $defaultKind) {
-				file_put_contents($parts[1].DIR_SEP.'.'.$addon['kind'], "");
+				file_put_contents($baseDir.DIR_SEP.$parts[1].DIR_SEP.'.'.$addon['kind'], "");
 			}
 		}
 	}
