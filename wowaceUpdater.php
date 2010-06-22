@@ -38,10 +38,21 @@ $wantNolib = true;
 //===== END OF CONFIGURATION =====
 
 function cleanupVersion($version, $addon)  {
-	return preg_replace('/^('.preg_quote($addon['name']).'|'.preg_quote($addon['project']).')\s*/i', '', $version);
+	return preg_replace('/^('.preg_quote($addon->name).'|'.preg_quote($addon->project).')\s*/i', '', $version);
 }
 
 $addons = array();
+
+function pruneFailedaddons() {
+	global $addons;
+	foreach($addons as $key => $addon) {
+		if(isset($addon->failure)) {
+			printf("%s: %s\n", $addon->name, $addon->failure);
+			unset($addons[$key]);
+		}
+	}	
+}
+
 
 // Build the list of updatable addons from the directory
 $dh = opendir($baseDir);
@@ -61,21 +72,22 @@ while($entry = readdir($dh)) {
 			$project = $values['X-Curse-Project-ID'];			
 			$version = file_exists($path.'.version') ? trim(file_get_contents($path.'.version')) : $values['X-Curse-Packaged-Version'];
 			if(!isset($addons[$project])) {
-				$addons[$project] = array(
-					'project' => $project,
-					'name' => isset($values['X-Curse-Project-Name']) ? $values['X-Curse-Project-Name'] : $entry,
-					'dirs' => array(),
-					'kind' => $defaultKind,
-				);
-				$addons[$project]['version'] = cleanupVersion($version, $addons[$project]);
+				$addon = new StdClass();
+				$addons[$project] = $addon;
+				$addon->project = $project;
+				$addon->name = isset($values['X-Curse-Project-Name']) ? $values['X-Curse-Project-Name'] : $entry;
+				$addon->dirs = array();
+				$addon->version = cleanupVersion($version, $addon);
+			} else {
+				$addon = $addons[$project];
 			}
-			$addons[$project]['dirs'][] = $entry;
+			$addon->dirs[] = $entry;
 			if(file_exists($path.'.alpha')) {
-				$addons[$project]['kind'] = 'alpha';
+				$addon->kind = 'alpha';
 			} elseif(file_exists($path.'.beta')) {
-				$addons[$project]['kind'] = 'beta';
+				$addon->kind = 'beta';
 			} elseif(file_exists($path.'.release')) {
-				$addons[$project]['kind'] = 'release';
+				$addon->kind = 'release';
 			}
 		}
 	}
@@ -96,16 +108,13 @@ printf("Found %d addons.\n", count($addons));
 // Fetch files.rss to get package informations using concurrent requests.
 print("Fetching latest package data.\n");
 $mch = curl_multi_init();
-$handles = array();
-$names = array();
 foreach($addons as $key => $addon) {
-	$mh = curl_init('http://www.wowace.com/addons/'.$addon['project'].'/files.rss');
+	$mh = curl_init('http://www.wowace.com/addons/'.$addon->project.'/files.rss');
 	curl_setopt($mh, CURLOPT_RETURNTRANSFER, 1);
 	curl_setopt($mh, CURLOPT_FOLLOWLOCATION, true);	
 	curl_setopt($mh, CURLOPT_FAILONERROR, true);
 	curl_multi_add_handle($mch, $mh);
-	$handles[$key] = $mh;
-	$names[intval($mh)] = $addon['name'];
+	$addon->rssmh = $mh;
 }
 
 $num = count($addons);
@@ -128,8 +137,9 @@ do {
 print("\n");
 
 // Parse RSS, extracting any (release-type, nolib-type) couples
-foreach($handles as $key => $mh) {
-	$addon =& $addons[$key];
+foreach($addons as $key => $addon) {
+	$mh = $addon->rssmh;
+	unset($addon->rssmh);
   $rss = curl_multi_getcontent($mh);
   curl_close($mh);
   try {
@@ -144,14 +154,15 @@ foreach($handles as $key => $mh) {
 		printf("Malformed RSS feed for %s from %s !", $addon['name'], 'http://www.wowace.com/addons/'.$addon['project'].'/files.rss');
 		continue;
 	}
+	$addon->available = array();
 	foreach($items as $item) {
 		unset($item->description);
 		preg_match('/^(.+)(-nolib)?$/', cleanupVersion((string)$item->title, $addon), $parts);
 		@list(, $version, $nolib) = $parts;
 		if(!isset($nolib) || $wantNolib) {
 			$kind = guessReleaseType($version);
-			if(!isset($addon['available'][$kind.$nolib])) {
-				$addon['available'][$kind.$nolib] = array(
+			if(!isset($addon->available[$kind.$nolib])) {
+				$addon->available[$kind.$nolib] = array(
 					'version' => $version,
 					'link' => (string)$item->link,
 				);
@@ -168,35 +179,29 @@ $searchOrder = array(
 );
 
 // Selected version to be installed
-foreach($addons as $project => $addon) {
+foreach($addons as $key => $addon) {
 	$selected = false;
-	foreach($searchOrder[$addon['kind']] as $key) {
-		if(isset($addon['available'][$key])) {
-			$selected = $addon['available'][$key];
+	foreach($searchOrder[isset($addon->kind) ? $addon->kind : $defaultKind] as $kind) {
+		if(isset($addon->available[$kind])) {
+			$selected = $addon->available[$kind];
 			break;
 		}
 	}
 	if(!$selected) {
-		$addons[$project]['failure'] = "no suitable version found.";
+		printf("%s: no suitable version found !\n", $addon->name);
+		unset($addons[$key]);
 		continue;
 	}
-	if($addon['version'] == $selected['version']) {
+	if($addon->version == $selected['version']) {
 		// Already installed, we're done with this one
-		//printf("%s: current: %s, latest: %s, up to date !\n", $addon['name'], $addon['version'], $selected['version']);
-		unset($addons[$project]);
+		//printf("%s: current: %s, latest: %s, up to date !\n", $addon->name, $addon->version, $selected['version']);
+		unset($addons[$key]);
 	} else {
 		// Need update
-		printf("%s: %s ===> %s\n", $addon['name'], $addon['version'], $selected['version']);
-		unset($addon['available']);
-		$addons[$project]['selected'] = $selected['link'];
-		$addons[$project]['newversion'] = $selected['version'];
-	}
-}
-
-foreach($addons as $key=>$addon) {
-	if(isset($addon['failure'])) {
-		printf("%s: %s\n", $addon['name'], $addon['failure']);
-		unset($addons[$key]);
+		printf("%s: %s ===> %s\n", $addon->name, $addon->version, $selected['version']);
+		unset($addon->available);
+		$addon->selected = $selected['link'];
+		$addon->newversion = $selected['version'];
 	}
 }
 
@@ -209,14 +214,14 @@ if(count($addons) == 0) {
 printf("Downloading %d files\n", count($addons));
 
 $mch = curl_multi_init();
-$projects = array();
-foreach($addons as $project => $addon) {
-	$mh = curl_init($addon['selected']);
+$handles = array();
+foreach($addons as $key => $addon) {
+	$mh = curl_init($addon->selected);
 	curl_setopt($mh, CURLOPT_RETURNTRANSFER, 1);
 	curl_setopt($mh, CURLOPT_FOLLOWLOCATION, true);
 	curl_setopt($mh, CURLOPT_FAILONERROR, true);	
 	curl_multi_add_handle($mch, $mh);
-	$projects[intval($mh)] = $project;
+	$handles[intval($mh)] = $addon;
 }
 
 $num = count($addons) * 2;
@@ -228,14 +233,13 @@ do {
     	if($info['msg'] == CURLMSG_DONE && $info['result'] == CURLE_OK) {
     		$done++;
     		$mh = $info['handle'];
-    		$index = intval($mh);
-    		$addon =& $addons[$projects[$index]];
-    		unset($projects[$index]);
-    		if(isset($addon['selected'])) {
+    		$addon = $handles[intval($mh)];
+    		unset($handles[intval($mh)]);
+    		if(isset($addon->selected)) {
   			  $page = curl_multi_getcontent($mh);
 				  curl_close($mh);
 				  if(empty($page)) {
-				  	$addon['failure'] = sprintf('Download of %s failed', $addon['selected']);
+				  	$addon->failure = sprintf('Download of %s failed', $addon->selected);
 				  	$done++;
 				  } elseif(preg_match('@<dd><a href="(http://.+?/.+?\.zip)">(.+?\.zip)</a></dd>@i', $page, $parts)) {
 				  	@list(, $url, $filename) = $parts;
@@ -244,44 +248,43 @@ do {
 				  	//$tmpfile = '/tmp/'.$filename;
 				  	$fh = fopen($tmpfile, 'w');
 				  	if($fh) {
-							$addon['fh'] = $fh;
-							$addon['orig-filename'] = $filename;
-							$addon['filename'] = $tmpfile;
+							$addon->fh = $fh;
+							$addon->origfilename = $filename;
+							$addon->filename = $tmpfile;
 							$mh = curl_init($url);
 							if($mh) {
-								$addon['url'] = $url;
+								$addon->url = $url;
 								curl_setopt($mh, CURLOPT_FOLLOWLOCATION, true);	
 								curl_setopt($mh, CURLOPT_FAILONERROR, true);
 								curl_setopt($mh, CURLOPT_FILE, $fh);	
 								curl_multi_add_handle($mch, $mh);
-								$projects[intval($mh)] = $project;	
+								$handles[intval($mh)] = $addon;	
 								$active = true;			  	
 							} else {
-								$addon['failure'] = sprintf("cannot download %s", $url);
+								$addon->failure = sprintf("cannot download %s", $url);
 								$done++;
 							}
 						} else {
-							$addon['failure'] = sprintf("cannot create file %s", $tmpfile);
+							$addon->failure = sprintf("cannot create file %s", $tmpfile);
 							$done++;
 				  	}
 				  } else {
-				  	$addon['failure'] = sprintf('cannot find the package URL in %s', $addon['selected']);
+				  	$addon->failure = sprintf('cannot find the package URL in %s', $addon->selected);
 				  	$done++;
 				  }
-    			unset($addon['selected']);
-    		} elseif(isset($addon['url'])) {
+    			unset($addon->selected);
+    		} elseif(isset($addon->url)) {
 	    		curl_close($mh);
-	    		unset($addon['url']);
+	    		unset($addon->url);
     		}
     	} elseif($info['msg'] == CURLMSG_DONE && $info['result'] != CURLE_OK) {
     		$mh = $info['handle'];
-    		$index = intval($mh);
-    		$addon =& $addons[$projects[$index]];
-    		unset($projects[$index]);
-    		$addon['failure'] = curl_error($mh);
+    		$addon = $handles[intval($mh)];
+    		unset($handles[intval($mh)]);
+    		$addon->failure = curl_error($mh);
 			  curl_close($mh);    		
-   			unset($addon['selected']);
-    		unset($addon['url']);
+   			unset($addon->selected);
+    		unset($addon->url);
     	}
     }
 		if($done != $lastdone) {
@@ -296,17 +299,15 @@ curl_multi_close($mch);
 print("\n");
 
 foreach($addons as $key => $addon) {
-	if(isset($addon['fh'])) {
-		$fh = $addon['fh'];
+	if(isset($addon->fh)) {
+		$fh = $addon->fh;
 		fflush($fh);
 		fclose($fh);
-		unset($addons[$key]['fh']);
-	}
-	if(isset($addon['failure'])) {
-		printf("%s: %s\n", $addon['name'], $addon['failure']);
-		unset($addons[$key]);
+		unset($addon->fh);
 	}
 }
+
+pruneFailedAddons();
 
 if(count($addons) == 0) {
 	print("Nothing to install.\n");
@@ -315,20 +316,20 @@ if(count($addons) == 0) {
 
 // Backup the old files and install the new ones
 foreach($addons as $key => $addon) {
-	printf("Installing %s %s: ", $addon['name'], $addon['newversion']); flush();
+	printf("Installing %s %s: ", $addon->name, $addon->newversion); flush();
 	$za = new ZipArchive();
-	if(TRUE !== ($err = $za->open($addon['filename']))) {
-		printf("Cannot open the zip archive %s: %d !\n", $addon['filename'], $err);
+	if(TRUE !== ($err = $za->open($addon->filename))) {
+		printf("Cannot open the zip archive %s: %d !\n", $addon->filename, $err);
 		continue;
 	}
-	$backupPath = $backupDir.$addon['project'].'-'.$addon['version'];
+	$backupPath = $backupDir.$addon->project.'-'.$addon->version;
 	if(!file_exists($backupPath)) {
 		if(mkdir($backupPath, 0755, true)) {
 			$failed = false;
-			$dirs = $addon['dirs'];
+			$dirs = $addon->dirs;
 			foreach($dirs as $i => $dir) {
 				if(!rename($baseDir.DIR_SEP.$dir, $backupPath.DIR_SEP.$dir)) {
-					printf("cannot backup %s, skipped.", $addon['name']);
+					printf("cannot backup %s, skipped.", $addon->name);
 					for($j = 0; $j < $i; $j++) {
 						@rename($backupPath.DIR_SEP.$dirs[$j], $baseDir.DIR_SEP.$dirs[$j]);
 					}
@@ -339,7 +340,7 @@ foreach($addons as $key => $addon) {
 			}
 			if($failed) continue;
 		} else {
-			printf("cannot backup %s, skipped.", $addon['name']);	
+			printf("cannot backup %s, skipped.", $addon->name);	
 			continue;
 		}
 	}
@@ -347,9 +348,9 @@ foreach($addons as $key => $addon) {
 	for($index = 0; $index < $za->numFiles; $index++) {
 		$entry = $za->statIndex($index);
 		if(preg_match('@^([^/]+)/\1\.toc$@i', $entry['name'], $parts)) {
-			file_put_contents($baseDir.DIR_SEP.$parts[1].DIR_SEP.'.version', $addon['newversion']);
-			if($addon['kind'] != $defaultKind) {
-				file_put_contents($baseDir.DIR_SEP.$parts[1].DIR_SEP.'.'.$addon['kind'], "");
+			file_put_contents($baseDir.DIR_SEP.$parts[1].DIR_SEP.'.version', $addon->newversion);
+			if(isset($addon->kind)) {
+				file_put_contents($baseDir.DIR_SEP.$parts[1].DIR_SEP.'.'.isset($addon->kind), "");
 			}
 		}
 	}
