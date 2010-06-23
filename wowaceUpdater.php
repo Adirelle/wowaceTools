@@ -27,13 +27,16 @@ if($failed) exit(1);
 $baseDir = "/home/guillaume/AddOns";
 
 // This is where old versions will be moved (no pruning)
-$backupDir = $baseDir.DIR_SEP.'.backup'.DIR_SEP;
+$backupDir = "/home/guillaume/.backup";
 
 // Must be one of 'release', 'beta' or 'alpha'.
 $defaultKind = 'beta';
 
 // Disable to use embedded addons
 $wantNolib = true;
+
+// Number of concurrent requests
+$maxConcurrent = 10;
 
 //===== END OF CONFIGURATION =====
 
@@ -43,7 +46,7 @@ function cleanupVersion($version, $addon)  {
 
 $addons = array();
 
-function pruneFailedaddons() {
+function pruneFailedAddons() {
 	global $addons;
 	foreach($addons as $key => $addon) {
 		if(isset($addon->failure)) {
@@ -108,69 +111,78 @@ printf("Found %d addons.\n", count($addons));
 // Fetch files.rss to get package informations using concurrent requests.
 print("Fetching latest package data.\n");
 $mch = curl_multi_init();
+$handles = array();
+$queue = array();
 foreach($addons as $key => $addon) {
 	$mh = curl_init('http://www.wowace.com/addons/'.$addon->project.'/files.rss');
 	curl_setopt($mh, CURLOPT_RETURNTRANSFER, 1);
 	curl_setopt($mh, CURLOPT_FOLLOWLOCATION, true);	
 	curl_setopt($mh, CURLOPT_FAILONERROR, true);
-	curl_multi_add_handle($mch, $mh);
-	$addon->rssmh = $mh;
+	$queue[] = $mh;
+	$handles[intval($mh)] = $addon;
 }
 
 $num = count($addons);
+$active = 0;
 $done = 0;
 $lastdone = -1;
 do {
-    $status = curl_multi_exec($mch, $active);
-    while(false !== ($info = curl_multi_info_read($mch))) {
-    	if($info['msg'] == CURLMSG_DONE && $info['result'] == CURLE_OK) {
-    		$done++;
-    	}
-    }
-		if($done != $lastdone) {
-			$marks = floor($done / $num * 70);
-			printf("%s%s %3d%%\r", str_repeat('#', $marks), str_repeat('.', 70-$marks), floor($done / $num * 100));
-			$lastdone = $done;
+	while($active < $maxConcurrent && !empty($queue)) {
+		curl_multi_add_handle($mch, array_shift($queue));
+		$active++;
+	}
+	$status = curl_multi_exec($mch, $active);
+	while(false !== ($info = curl_multi_info_read($mch))) {
+		if($info['msg'] == CURLMSG_DONE) {
+			$done++;
+			$mh = $info['handle'];
+			$addon = $handles[intval($mh)];
+			unset($handles[intval($mh)]);
+			if($info['result'] == CURLE_OK) {
+				$rss = curl_multi_getcontent($mh);
+				try {
+					$xml = new SimpleXMLElement($rss);
+					$items = @$xml->channel->item;
+					if(isset($items)) {
+						$addon->available = array();
+						foreach($items as $item) {
+							unset($item->description);
+							preg_match('/^(.+)(-nolib)?$/', cleanupVersion((string)$item->title, $addon), $parts);
+							@list(, $version, $nolib) = $parts;
+							if(!isset($nolib) || $wantNolib) {
+								$kind = guessReleaseType($version);
+								if(!isset($addon->available[$kind.$nolib])) {
+									$addon->available[$kind.$nolib] = array(
+										'version' => $version,
+										'link' => (string)$item->link,
+									);
+								}
+							}
+						}
+					} else {
+						$addon->failure = sprintf("Malformed RSS feed for %s from %s !", $addon->name, 'http://www.wowace.com/addons/'.$addon->project.'/files.rss');
+					}
+				} catch(Exception $e) {
+					$addon->failure = sprintf("Could not parse XML for %s from http://www.wowace.com/addons/%s/files.rss: %s !", $addon->name, $addon->project, $e);
+				}
+			} else {
+				$addon->failure = sprintf("Could not retrieve package data for %s: %s", $addon->project, curl_error($mh));
+			}
+			curl_close($mh);
 		}
-} while ($status === CURLM_CALL_MULTI_PERFORM || $active);
+	}
+	if($done != $lastdone) {
+		$marks = floor($done / $num * 70);
+		printf("%s%s %3d%%\r", str_repeat('#', $marks), str_repeat('.', 70-$marks), floor($done / $num * 100));
+		$lastdone = $done;
+	}
+} while ($status === CURLM_CALL_MULTI_PERFORM || $active || !empty($queue));
+
+curl_multi_close($mch);
 
 print("\n");
 
-// Parse RSS, extracting any (release-type, nolib-type) couples
-foreach($addons as $key => $addon) {
-	$mh = $addon->rssmh;
-	unset($addon->rssmh);
-  $rss = curl_multi_getcontent($mh);
-  curl_close($mh);
-  try {
-		$xml = new SimpleXMLElement($rss);
-	} catch(Exception $e) {
-		printf("Could not parse XML for %s from http://www.wowace.com/addons/%s/files.rss: %s !", $addon['name'],$addon['project'], $e);
-		unset($addons[key]);
-		continue;
-	}
-	$items = @$xml->channel->item;
-	if(!isset($items)) {
-		printf("Malformed RSS feed for %s from %s !", $addon['name'], 'http://www.wowace.com/addons/'.$addon['project'].'/files.rss');
-		continue;
-	}
-	$addon->available = array();
-	foreach($items as $item) {
-		unset($item->description);
-		preg_match('/^(.+)(-nolib)?$/', cleanupVersion((string)$item->title, $addon), $parts);
-		@list(, $version, $nolib) = $parts;
-		if(!isset($nolib) || $wantNolib) {
-			$kind = guessReleaseType($version);
-			if(!isset($addon->available[$kind.$nolib])) {
-				$addon->available[$kind.$nolib] = array(
-					'version' => $version,
-					'link' => (string)$item->link,
-				);
-			}
-		}
-	}
-}
-curl_multi_close($mch);
+pruneFailedAddons();
 
 $searchOrder = array(
 	'release' => array('release-nolib', 'release', 'beta-nolib', 'beta', 'alpha-nolib', 'alpha'),
@@ -206,8 +218,8 @@ foreach($addons as $key => $addon) {
 }
 
 if(count($addons) == 0) {
-	printf("Nothing to udpate.\n");
-	exit(0);
+	printf("Nothing to update.\n");
+		exit(0);
 }
 
 // Now get the download page, scrape it to extract the file path, then download it
@@ -215,84 +227,89 @@ printf("Downloading %d files\n", count($addons));
 
 $mch = curl_multi_init();
 $handles = array();
+$queue = array();
 foreach($addons as $key => $addon) {
 	$mh = curl_init($addon->selected);
 	curl_setopt($mh, CURLOPT_RETURNTRANSFER, 1);
 	curl_setopt($mh, CURLOPT_FOLLOWLOCATION, true);
 	curl_setopt($mh, CURLOPT_FAILONERROR, true);	
-	curl_multi_add_handle($mch, $mh);
+	$queue[] = $mh;
 	$handles[intval($mh)] = $addon;
 }
 
 $num = count($addons) * 2;
 $done = 0;
 $lastdone = -1;
+$active = 0;
 do {
-    $status = curl_multi_exec($mch, $active);
-    while(false !== ($info = curl_multi_info_read($mch))) {
-    	if($info['msg'] == CURLMSG_DONE && $info['result'] == CURLE_OK) {
-    		$done++;
-    		$mh = $info['handle'];
-    		$addon = $handles[intval($mh)];
-    		unset($handles[intval($mh)]);
-    		if(isset($addon->selected)) {
-  			  $page = curl_multi_getcontent($mh);
-				  curl_close($mh);
-				  if(empty($page)) {
-				  	$addon->failure = sprintf('Download of %s failed', $addon->selected);
-				  	$done++;
-				  } elseif(preg_match('@<dd><a href="(http://.+?/.+?\.zip)">(.+?\.zip)</a></dd>@i', $page, $parts)) {
-				  	@list(, $url, $filename) = $parts;
-				  	$tmpfile = tempnam('/tmp', $filename.'-');
-				  	register_shutdown_function('unlink', $tmpfile);
-				  	//$tmpfile = '/tmp/'.$filename;
-				  	$fh = fopen($tmpfile, 'w');
-				  	if($fh) {
-							$addon->fh = $fh;
-							$addon->origfilename = $filename;
-							$addon->filename = $tmpfile;
-							$mh = curl_init($url);
-							if($mh) {
-								$addon->url = $url;
-								curl_setopt($mh, CURLOPT_FOLLOWLOCATION, true);	
-								curl_setopt($mh, CURLOPT_FAILONERROR, true);
-								curl_setopt($mh, CURLOPT_FILE, $fh);	
-								curl_multi_add_handle($mch, $mh);
-								$handles[intval($mh)] = $addon;	
-								$active = true;			  	
-							} else {
-								$addon->failure = sprintf("cannot download %s", $url);
-								$done++;
-							}
+	while($active < $maxConcurrent && !empty($queue)) {
+		curl_multi_add_handle($mch, array_shift($queue));
+		$active++;
+	}
+	$status = curl_multi_exec($mch, $active);
+	while(false !== ($info = curl_multi_info_read($mch))) {
+		if($info['msg'] == CURLMSG_DONE && $info['result'] == CURLE_OK) {
+			$done++;
+			$mh = $info['handle'];
+			$addon = $handles[intval($mh)];
+			unset($handles[intval($mh)]);
+			if(isset($addon->selected)) {
+				$page = curl_multi_getcontent($mh);
+				curl_close($mh);
+				if(empty($page)) {
+					$addon->failure = sprintf('Download of %s failed', $addon->selected);
+					$done++;
+				} elseif(preg_match('@<dd><a href="(http://.+?/.+?\.zip)">(.+?\.zip)</a></dd>@i', $page, $parts)) {
+					@list(, $url, $filename) = $parts;
+					$tmpfile = tempnam('/tmp', $filename.'-');
+					register_shutdown_function('unlink', $tmpfile);
+					//$tmpfile = '/tmp/'.$filename;
+					$fh = fopen($tmpfile, 'w');
+					if($fh) {
+						$addon->fh = $fh;
+						$addon->origfilename = $filename;
+						$addon->filename = $tmpfile;
+						$mh = curl_init($url);
+						if($mh) {
+							$addon->url = $url;
+							curl_setopt($mh, CURLOPT_FOLLOWLOCATION, true);	
+							curl_setopt($mh, CURLOPT_FAILONERROR, true);
+							curl_setopt($mh, CURLOPT_FILE, $fh);	
+							$handles[intval($mh)] = $addon;	
+							$queue[] = $mh;
 						} else {
-							$addon->failure = sprintf("cannot create file %s", $tmpfile);
+							$addon->failure = sprintf("cannot download %s", $url);
 							$done++;
-				  	}
-				  } else {
-				  	$addon->failure = sprintf('cannot find the package URL in %s', $addon->selected);
-				  	$done++;
-				  }
-    			unset($addon->selected);
-    		} elseif(isset($addon->url)) {
-	    		curl_close($mh);
-	    		unset($addon->url);
-    		}
-    	} elseif($info['msg'] == CURLMSG_DONE && $info['result'] != CURLE_OK) {
-    		$mh = $info['handle'];
-    		$addon = $handles[intval($mh)];
-    		unset($handles[intval($mh)]);
-    		$addon->failure = curl_error($mh);
-			  curl_close($mh);    		
-   			unset($addon->selected);
-    		unset($addon->url);
-    	}
-    }
-		if($done != $lastdone) {
-			$marks = floor($done / $num * 70);
-			printf("%s%s %3d%%\r", str_repeat('#', $marks), str_repeat('.', 70-$marks), floor($done / $num * 100));
-			$lastdone = $done;
+						}
+					} else {
+						$addon->failure = sprintf("cannot create file %s", $tmpfile);
+						$done++;
+					}
+				} else {
+					$addon->failure = sprintf('cannot find the package URL in %s', $addon->selected);
+					$done++;
+				}
+				unset($addon->selected);
+			} elseif(isset($addon->url)) {
+				curl_close($mh);
+				unset($addon->url);
+			}
+		} elseif($info['msg'] == CURLMSG_DONE && $info['result'] != CURLE_OK) {
+			$mh = $info['handle'];
+			$addon = $handles[intval($mh)];
+			unset($handles[intval($mh)]);
+			$addon->failure = curl_error($mh);
+			curl_close($mh);    		
+			unset($addon->selected);
+			unset($addon->url);
 		}
-} while ($status === CURLM_CALL_MULTI_PERFORM || $active);
+	}
+	if($done != $lastdone) {
+		$marks = floor($done / $num * 70);
+		printf("%s%s %3d%%\r", str_repeat('#', $marks), str_repeat('.', 70-$marks), floor($done / $num * 100));
+		$lastdone = $done;
+	}
+} while ($status === CURLM_CALL_MULTI_PERFORM || $active || !empty($queue));
 
 curl_multi_close($mch);
 
