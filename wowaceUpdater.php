@@ -146,12 +146,12 @@ do {
 				$current = null;
 				foreach(preg_split("/\s*\n\s*/", $html, null, PREG_SPLIT_NO_EMPTY) as $line) {
 					if(preg_match('@<td class="col-file"><a href="(/addons/.+?/)">(.+?)</a></td>@', $line, $parts)) {
-						$title = cleanupVersion($parts[2], $addon);
-						preg_match('@^(.+?)(-nolib)?$@i', $title, $titleParts);
+						$version = cleanupVersion($parts[2], $addon);
+						preg_match('@^(.+?)(-nolib)?$@i', $version, $versionParts);
 						$current = array(
-							'title' => $title,
-							'version' => $titleParts[1],
-							'nolib' => !empty($titleParts[2]),
+							'version' => $version,
+							'baseVersion' => $versionParts[1],
+							'nolib' => !empty($versionParts[2]),
 							'link' => 'http://www.wowace.com'.$parts[1],
 							'ok' => false,
 						);
@@ -186,7 +186,7 @@ do {
 					foreach(array('alpha', 'beta', 'release') as $kind) {
 						$kindNolib = $kind.'-nolib';
 						if(isset($addon->available[$kindNolib])) {
-							if(!isset($addon->available[$kind]) || $addon->available[$kindNolib]['version'] == $addon->available[$kind]['version']) {
+							if(!isset($addon->available[$kind]) || $addon->available[$kindNolib]['baseVersion'] == $addon->available[$kind]['baseVersion']) {
 								$addon->available[$kind] = $addon->available[$kindNolib];
 							}
 							unset($addon->available[$kindNolib]);
@@ -245,7 +245,7 @@ foreach($addons as $key => $addon) {
 		unset($addons[$key]);
 	} else {
 		// Need update
-		printf("%s (%s): %s ===> %s (%s)\n", $addon->name, $kind, $addon->version, $selected['title'], $selected['kind']);
+		printf("%s (%s): %s ===> %s (%s)\n", $addon->name, $kind, $addon->version, $selected['version'], $selected['kind']);
 		unset($addon->available);
 		$addon->selected = $selected['link'];
 		$addon->newversion = $selected['version'];
