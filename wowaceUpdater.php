@@ -400,7 +400,7 @@ foreach($addons as $key => $addon) {
 		if(preg_match('@^([^/]+)/\1\.toc$@i', $entry['name'], $parts)) {
 			file_put_contents($baseDir.DIR_SEP.$parts[1].DIR_SEP.'.version', $addon->newversion);
 			if(isset($addon->kind)) {
-				file_put_contents($baseDir.DIR_SEP.$parts[1].DIR_SEP.'.'.isset($addon->kind), "");
+				file_put_contents($baseDir.DIR_SEP.$parts[1].DIR_SEP.'.'.$addon->kind, "");
 			}
 		}
 	}
