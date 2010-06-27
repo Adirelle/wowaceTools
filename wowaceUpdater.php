@@ -245,7 +245,7 @@ foreach($addons as $key => $addon) {
 		unset($addons[$key]);
 	} else {
 		// Need update
-		printf("%s (%s): %s ===> %s (%s)\n", $addon->name, $kind, $addon->version, $selected['version'], $selected['kind']);
+		printf("%s (%s): %s ===> %s (%s)\n", $addon->name, $kind, $addon->version, $selected['title'], $selected['kind']);
 		unset($addon->available);
 		$addon->selected = $selected['link'];
 		$addon->newversion = $selected['version'];
