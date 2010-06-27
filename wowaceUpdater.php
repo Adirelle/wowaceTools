@@ -40,6 +40,13 @@ $maxConcurrent = 10;
 
 //===== END OF CONFIGURATION =====
 
+$defaultCurlOptions = array(
+	CURLOPT_FOLLOWLOCATION => true,
+	CURLOPT_AUTOREFERER => true,
+	CURLOPT_FAILONERROR => true,
+	CURLOPT_RETURNTRANSFER => true,
+);
+
 function cleanupVersion($version, $addon)  {
 	return preg_replace('/^('.preg_quote($addon->name).'|'.preg_quote($addon->project).')\s*/i', '', $version);
 }
@@ -53,7 +60,7 @@ function pruneFailedAddons() {
 			printf("%s: %s\n", $addon->name, $addon->failure);
 			unset($addons[$key]);
 		}
-	}	
+	}
 }
 
 
@@ -72,7 +79,7 @@ while($entry = readdir($dh)) {
 		}
 		fclose($fh);
 		if(isset($values['X-Curse-Project-ID']) && isset($values['X-Curse-Packaged-Version'])) {
-			$project = $values['X-Curse-Project-ID'];			
+			$project = $values['X-Curse-Project-ID'];
 			$version = file_exists($path.'.version') ? trim(file_get_contents($path.'.version')) : $values['X-Curse-Packaged-Version'];
 			if(!isset($addons[$project])) {
 				$addon = new StdClass();
@@ -97,14 +104,10 @@ while($entry = readdir($dh)) {
 }
 closedir($dh);
 
-function guessReleaseType($version) {
-	if(preg_match('/^v?[-\d\.\_]+$|stable|release/i', $version))
-		return 'release';
-	elseif(preg_match('/(beta|alpha)/i', $version, $parts))
-		return strtolower($parts[1]);
-	else
-		return 'alpha';
+function addonSort($a, $b) {
+	return strcasecmp($a->name, $b->name);
 }
+uasort($addons, "addonSort");
 
 printf("Found %d addons.\n", count($addons));
 
@@ -113,11 +116,10 @@ print("Fetching latest package data.\n");
 $mch = curl_multi_init();
 $handles = array();
 $queue = array();
+
 foreach($addons as $key => $addon) {
-	$mh = curl_init('http://www.wowace.com/addons/'.$addon->project.'/files.rss');
-	curl_setopt($mh, CURLOPT_RETURNTRANSFER, 1);
-	curl_setopt($mh, CURLOPT_FOLLOWLOCATION, true);	
-	curl_setopt($mh, CURLOPT_FAILONERROR, true);
+	$mh = curl_init('http://www.wowace.com/addons/'.$addon->project.'/files/');
+	curl_setopt_array($mh, $defaultCurlOptions);
 	$queue[] = $mh;
 	$handles[intval($mh)] = $addon;
 }
@@ -139,31 +141,57 @@ do {
 			$addon = $handles[intval($mh)];
 			unset($handles[intval($mh)]);
 			if($info['result'] == CURLE_OK) {
-				$rss = curl_multi_getcontent($mh);
-				try {
-					$xml = new SimpleXMLElement($rss);
-					$items = @$xml->channel->item;
-					if(isset($items)) {
-						$addon->available = array();
-						foreach($items as $item) {
-							unset($item->description);
-							preg_match('/^(.+)(-nolib)?$/', cleanupVersion((string)$item->title, $addon), $parts);
-							@list(, $version, $nolib) = $parts;
-							if(!isset($nolib) || $wantNolib) {
-								$kind = guessReleaseType($version);
-								if(!isset($addon->available[$kind.$nolib])) {
-									$addon->available[$kind.$nolib] = array(
-										'version' => $version,
-										'link' => (string)$item->link,
-									);
+				$html = curl_multi_getcontent($mh);
+				$addon->available = array();
+				$current = null;
+				foreach(preg_split("/\s*\n\s*/", $html, null, PREG_SPLIT_NO_EMPTY) as $line) {
+					if(preg_match('@<td class="col-file"><a href="(/addons/.+?/)">(.+?)</a></td>@', $line, $parts)) {
+						$title = cleanupVersion($parts[2], $addon);
+						preg_match('@^(.+?)(-nolib)?$@i', $title, $titleParts);
+						$current = array(
+							'title' => $title,
+							'version' => $titleParts[1],
+							'nolib' => !empty($titleParts[2]),
+							'link' => 'http://www.wowace.com'.$parts[1],
+							'ok' => false,
+						);
+					} elseif($current) {
+						if(preg_match('@<td class="col-type"><.+>(alpha|beta|release)<.+></td>@i', $line, $parts)) {
+							$current['kind'] = strtolower($parts[1]);
+						} elseif(preg_match('@<td class="col-status"><.+>normal<.+></td>@i', $line, $parts)) {
+							$current['ok'] = true;
+						} elseif(preg_match('@<td class="col-date"><.+ data-epoch="(\d+)">.*</span></td>@i', $line, $parts)) {
+							$current['timestamp'] = intval($parts[1]);
+						} elseif(preg_match('@<td class="col-filename">@i', $line)) {
+							if($current['ok'] && isset($current['kind']) && isset($current['timestamp'])) {
+								$kind = $current['kind'];
+								if($current['nolib']) {
+									if($wantNolib) {
+										$kind .= '-nolib';
+									} else {
+										$kind = false;
+									}
+								}
+								if($kind && (!isset($addon->available[$kind]) || $current['timestamp'] > $addon->available[$kind]['timestamp'])) {
+									unset($current['ok']);
+									unset($current['nolib']);
+									$addon->available[$kind] = $current;
 								}
 							}
+							$current = null;
 						}
-					} else {
-						$addon->failure = sprintf("Malformed RSS feed for %s from %s !", $addon->name, 'http://www.wowace.com/addons/'.$addon->project.'/files.rss');
 					}
-				} catch(Exception $e) {
-					$addon->failure = sprintf("Could not parse XML for %s from http://www.wowace.com/addons/%s/files.rss: %s !", $addon->name, $addon->project, $e);
+				}
+				if($wantNolib) {
+					foreach(array('alpha', 'beta', 'release') as $kind) {
+						$kindNolib = $kind.'-nolib';
+						if(isset($addon->available[$kindNolib])) {
+							if(!isset($addon->available[$kind]) || $addon->available[$kindNolib]['version'] == $addon->available[$kind]['version']) {
+								$addon->available[$kind] = $addon->available[$kindNolib];
+							}
+							unset($addon->available[$kindNolib]);
+						}
+					}
 				}
 			} else {
 				$addon->failure = sprintf("Could not retrieve package data for %s: %s", $addon->project, curl_error($mh));
@@ -184,18 +212,25 @@ print("\n");
 
 pruneFailedAddons();
 
-$searchOrder = array(
-	'release' => array('release-nolib', 'release', 'beta-nolib', 'beta', 'alpha-nolib', 'alpha'),
-	'beta' => array('beta-nolib', 'beta', 'release-nolib', 'release', 'alpha-nolib', 'alpha'),
-	'alpha' => array('alpha-nolib', 'alpha', 'beta-nolib', 'beta', 'release-nolib', 'release'),
+$resolveFilters = array(
+	'release' => array(array('release'), array('beta'), array('alpha')),
+	'beta' => array(array('release', 'beta'), array('alpha')),
+	'alpha' => array(array('release', 'beta', 'alpha')),
 );
 
 // Selected version to be installed
 foreach($addons as $key => $addon) {
 	$selected = false;
-	foreach($searchOrder[isset($addon->kind) ? $addon->kind : $defaultKind] as $kind) {
-		if(isset($addon->available[$kind])) {
-			$selected = $addon->available[$kind];
+	$kind = isset($addon->kind) ? $addon->kind : $defaultKind;
+	foreach($resolveFilters[$kind] as $filter) {
+		foreach($addon->available as $pkg) {
+			if(in_array($pkg['kind'], $filter)) {
+				if(!$selected || $pkg['timestamp'] > $selected['timestamp']) {
+					$selected = $pkg;
+				}
+			}
+		}
+		if($selected) {
 			break;
 		}
 	}
@@ -206,11 +241,11 @@ foreach($addons as $key => $addon) {
 	}
 	if($addon->version == $selected['version']) {
 		// Already installed, we're done with this one
-		//printf("%s: current: %s, latest: %s, up to date !\n", $addon->name, $addon->version, $selected['version']);
+		//printf("%s: current: %s, latest %s: %s (%s), up to date !\n", $addon->name, $addon->version, $kind, $selected['version'], $selected['kind']);
 		unset($addons[$key]);
 	} else {
 		// Need update
-		printf("%s: %s ===> %s\n", $addon->name, $addon->version, $selected['version']);
+		printf("%s (%s): %s ===> %s (%s)\n", $addon->name, $kind, $addon->version, $selected['version'], $selected['kind']);
 		unset($addon->available);
 		$addon->selected = $selected['link'];
 		$addon->newversion = $selected['version'];
@@ -230,9 +265,7 @@ $handles = array();
 $queue = array();
 foreach($addons as $key => $addon) {
 	$mh = curl_init($addon->selected);
-	curl_setopt($mh, CURLOPT_RETURNTRANSFER, 1);
-	curl_setopt($mh, CURLOPT_FOLLOWLOCATION, true);
-	curl_setopt($mh, CURLOPT_FAILONERROR, true);	
+	curl_setopt_array($mh, $defaultCurlOptions);
 	$queue[] = $mh;
 	$handles[intval($mh)] = $addon;
 }
@@ -272,10 +305,10 @@ do {
 						$mh = curl_init($url);
 						if($mh) {
 							$addon->url = $url;
-							curl_setopt($mh, CURLOPT_FOLLOWLOCATION, true);	
-							curl_setopt($mh, CURLOPT_FAILONERROR, true);
-							curl_setopt($mh, CURLOPT_FILE, $fh);	
-							$handles[intval($mh)] = $addon;	
+							curl_setopt_array($mh, $defaultCurlOptions);
+							curl_setopt($mh, CURLOPT_RETURNTRANSFER, false);
+							curl_setopt($mh, CURLOPT_FILE, $fh);
+							$handles[intval($mh)] = $addon;
 							$queue[] = $mh;
 						} else {
 							$addon->failure = sprintf("cannot download %s", $url);
@@ -299,7 +332,7 @@ do {
 			$addon = $handles[intval($mh)];
 			unset($handles[intval($mh)]);
 			$addon->failure = curl_error($mh);
-			curl_close($mh);    		
+			curl_close($mh);
 			unset($addon->selected);
 			unset($addon->url);
 		}
@@ -357,7 +390,7 @@ foreach($addons as $key => $addon) {
 			}
 			if($failed) continue;
 		} else {
-			printf("cannot backup %s, skipped.", $addon->name);	
+			printf("cannot backup %s, skipped.", $addon->name);
 			continue;
 		}
 	}
