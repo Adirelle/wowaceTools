@@ -1,8 +1,8 @@
-h1. wowaceUpdate.php
+h1. wowaceUpdater.php
 
-This little PHP scripts updates your addons installed from the wowace and curseforge websites.
+This script updates addons installed from the wowace and curseforge websites.
 
-It requires PHP5 >= 5.2 and the following extension: SimpleXML, cURL and ZIP.
+It requires PHP5 >= 5.2 and the following extension: cURL and ZIP.
 
 (On debian-based linuxes, the packages php5-cli and php5-curl should be enough).
 
@@ -34,4 +34,38 @@ You can override the default kind of installation by creating an empty file name
 
 h1. UpdateLocalization.php
 
-To be written.
+This script perform 3 tasks related to localization:
+# extract the strings to localize from source files,
+# import them into the wowace localization system (if you provided your API key, see below),
+# update the localization file from strings extracted at first step and from the wowace localization system.
+
+The script should run at the root directory of your addon, which also should contain the localization file.
+
+h2. Configuration
+
+You can change the name of the localization file at the top of the script. By default it is @Localization.lua@.
+
+To import the strings into the wowace localization system, your API key is required. By default the script tries to load it from a file named @.wowaceApiKey@  in your home directory ; this file should only contains the raw API key. If you can get this key from this page : http://www.wowace.com/home/api-key/ . Ensure the file is readable only by you, as it is a kind of secret key (like SSH private keys). If the script can not find this key, it will not import the strings.
+
+h2. Addon setup
+
+The addon should contain a localization file before running the script. This script should at least contains the following special tag:
+
+@%localization project_name [param1=value1 [param2=value2 [...]]]@
+
+The project name is required. It is the wowace addon "slug name" and is used to build the URLs. The parameters are optionals, and are used when exporting localized strings.
+
+Any line after this tag will be deleted by the script.
+
+h2. Detail of string extraction
+
+The script recursively looks for every .lua files in the addon directory, with the following exceptions:
+* It ignores any file or directory starting with a dot (hidden files à la Unix).
+* It ignores any file in the @libs/@ subdirectory.
+
+Inside each file, it will looks for strings looking like @L["some string"]@ or @L["some string"] = "some other english string"@. In the second case, it will remember the value. 
+
+The script ignores any line containing "@noloc". It also ignores block of lines enclosed in "@noloc[[" and "@noloc]]".
+
+The script does parse the content of lua scripts.
+
