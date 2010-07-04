@@ -45,7 +45,7 @@ h2. Configuration
 
 You can change the name of the localization file at the top of the script. By default it is @Localization.lua@.
 
-To import the strings into the wowace localization system, your API key is required. By default the script tries to load it from a file named @.wowaceApiKey@  in your home directory ; this file should only contains the raw API key. If you can get this key from this page : http://www.wowace.com/home/api-key/ . Ensure the file is readable only by you, as it is a kind of secret key (like SSH private keys). If the script can not find this key, it will not import the strings.
+To import the strings into the wowace localization system, your API key is required. By default the script tries to load it from a file named @.wowaceApiKey@  in your home directory ; this file should only contains the raw API key. If you can get this key from "this page":http://www.wowace.com/home/api-key/. Ensure the file is readable only by you, as it is a kind of secret key (like SSH private keys). If the script can not find this key, it will not import the strings.
 
 h2. Addon setup
 
@@ -63,7 +63,7 @@ The script recursively looks for every .lua files in the addon directory, with t
 * It ignores any file or directory starting with a dot (hidden files à la Unix).
 * It ignores any file in the @libs/@ subdirectory.
 
-Inside each file, it will looks for strings looking like @L["some string"]@ or @L["some string"] = "some other english string"@. In the second case, it will remember the value. 
+Inside each file, it will looks for strings looking like @L["some string"]@ or @L["some string"] = "some other english string"@. In the second case, it will remember the value. The regex used to find these string if pretty rough, so it will likely ignore things like @L[someVar]à and will cause havoc with something like @L["foo"..var.."bar"]@ (which is okay anyway as you must use @string.format(L["foo%sbar"], var)@ for proper localization).
 
 The script ignores any line containing @@noloc@. It also ignores block of lines enclosed in @@noloc[[@ and @@noloc]]@.
 
