@@ -7,7 +7,7 @@
 $LOCALIZATION_FILE = "Localization.lua";
 
 // Wowace API key
-$API_KEY = @file_get_contents(getenv("HOME").DIRECTORY_SEPARATOR.".wowaceApiKey");
+$API_KEY = trim(@file_get_contents(getenv("HOME").DIRECTORY_SEPARATOR.".wowaceApiKey"));
 
 //------------------------------------------
 
