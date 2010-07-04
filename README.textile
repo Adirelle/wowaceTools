@@ -63,7 +63,7 @@ The script recursively looks for every .lua files in the addon directory, with t
 * It ignores any file or directory starting with a dot (hidden files à la Unix).
 * It ignores any file in the @libs/@ subdirectory.
 
-Inside each file, it will looks for strings looking like @L["some string"]@ or @L["some string"] = "some other english string"@. In the second case, it will remember the value. The regex used to find these string if pretty rough, so it will likely ignore things like @L[someVar]à and will cause havoc with something like @L["foo"..var.."bar"]@ (which is okay anyway as you must use @string.format(L["foo%sbar"], var)@ for proper localization).
+Inside each file, it will looks for strings looking like @L["some string"]@ or @L["some string"] = "some other english string"@. In the second case, it will remember the value. The regex used to find these string is pretty rough, so it will likely ignore things like @L[someVar]@ and will cause havoc with something like @L["foo"..var.."bar"]@ (which is okay anyway as you must use @string.format(L["foo%sbar"], var)@ for proper localization).
 
 The script ignores any line containing @@noloc@. It also ignores block of lines enclosed in @@noloc[[@ and @@noloc]]@.
 
