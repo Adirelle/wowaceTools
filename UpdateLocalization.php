@@ -88,7 +88,8 @@ foreach($files as $file) {
 		}
 	}
 }
-printf("Found %d strings.\n", count($seen));
+$strings = array_filter($strings);
+printf("Found %d string(s) in %s file(s).\n", count($seen), count($strings));
 
 function buildStrings($strings, $withComments = true) {
 	$lines = array();
@@ -171,13 +172,18 @@ function updateLocales($parts) {
 -- CHANGES SHOULD BE MADE USING http://www.wowace.com/addons/$project/localization/
 
 -- @noloc[[
-
------------------------- enUS ------------------------
 ";
 
 	// English strings, from source files
 	unset($strings[$LOCALIZATION_FILE]);
-	$lines[] = buildStrings($strings);
+	$enUSstrings = buildStrings($strings);
+	if(!empty($enUSstrings)) {
+		$lines[] = "
+------------------------ enUS ------------------------
+
+$enUSstrings
+";
+	}
 
 	// Add other locales, from wowace localization pages
 	$first = true;
