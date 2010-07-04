@@ -1,3 +1,5 @@
+h1. wowaceUpdate.php
+
 This little PHP scripts updates your addons installed from the wowace and curseforge websites.
 
 It requires PHP5 >= 5.2 and the following extension: SimpleXML, cURL and ZIP.
@@ -30,3 +32,6 @@ The script will ignore any addon directory containing one of these file or direc
 
 You can override the default kind of installation by creating an empty file named either ".release", ".beta" or ".alpha" in the addon directory.
 
+h1. UpdateLocalization.php
+
+To be written.
