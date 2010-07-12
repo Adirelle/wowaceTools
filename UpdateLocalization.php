@@ -77,12 +77,14 @@ foreach($files as $file) {
 				$strings[$file][$str] = $value;
 				$seen[$str] = $file;
 
-			} elseif(preg_match('/L\[([\'"])(.+?)\1\]/', $line, $parts)) {
-				// L["somestr"]
-				$str = normalizeString($parts[2], $parts[1]);
-				if(!isset($seen[$str])) {
-					$strings[$file][$str] = true;
-					$seen[$str] = $file;
+			} elseif(preg_match_all('/L\[([\'"])(.+?)\1\]/', $line, $matches, PREG_SET_ORDER)) {
+				// L["somestr"] L["otherstr"]
+				foreach($matches as $match) {
+					$str = normalizeString($match[2], $match[1]);
+					if(!isset($seen[$str])) {
+						$strings[$file][$str] = true;
+						$seen[$str] = $file;
+					}
 				}
 			}
 		}
