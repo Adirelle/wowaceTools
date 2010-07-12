@@ -27,7 +27,7 @@ if($failed) exit(1);
 $baseDir = "/home/guillaume/AddOns";
 
 // This is where old versions will be moved (no pruning)
-$backupDir = "/home/guillaume/.backup";
+$backupDir = "/home/guillaume/.addonBackup";
 
 // Must be one of 'release', 'beta' or 'alpha'.
 $defaultKind = 'beta';
@@ -372,7 +372,7 @@ foreach($addons as $key => $addon) {
 		printf("Cannot open the zip archive %s: %d !\n", $addon->filename, $err);
 		continue;
 	}
-	$backupPath = $backupDir.$addon->project.'-'.$addon->version;
+	$backupPath = $backupDir.DIR_SEP.$addon->project.'-'.$addon->version;
 	if(!file_exists($backupPath)) {
 		if(mkdir($backupPath, 0755, true)) {
 			$failed = false;
