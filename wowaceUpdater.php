@@ -41,6 +41,9 @@ $wantNolib = true;
 // Number of concurrent requests
 $maxConcurrent = 10;
 
+// Do not really modify the files
+$dryRun = false;
+
 //===== END OF CONFIGURATION =====
 
 // Override default configuration
@@ -375,6 +378,10 @@ if(count($addons) == 0) {
 // Backup the old files and install the new ones
 foreach($addons as $key => $addon) {
 	printf("Installing %s %s: ", $addon->name, $addon->newversion); flush();
+	if($dryRun) {
+		echo "dry-run, skipped !\n"; flush();
+		continue;
+	}
 	$za = new ZipArchive();
 	if(TRUE !== ($err = $za->open($addon->filename))) {
 		printf("Cannot open the zip archive %s: %d !\n", $addon->filename, $err);
