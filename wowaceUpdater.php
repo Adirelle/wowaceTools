@@ -11,15 +11,18 @@ if($major < 5 || ($major == 5 && $minor < 2)) {
 	$failed = true;
 }
 foreach(array('ZIP', 'cURL', 'SimpleXML') as $ext) {
-	if(!extension_loaded($ext)) {
+	if(!extension_loaded($ext) && !extension_loaded('php_'.$ext)) {
 		@dl($ext);
-		if(!extension_loaded($ext)) {
-			printf("The %s extension is requird !\n", $ext);
+		@dl('php_'.$ext);
+		if(!extension_loaded($ext) && !extension_loaded('php_'.$ext)) {
+			printf("The %s extension is required !\n", $ext);
 			$failed = true;
 		}
 	}
 }
 if($failed) exit(1);
+
+define('HOME', isset($_SERVER["USERPROFILE"]) ? $_SERVER["USERPROFILE"] : $_SERVER["HOME"]);
 
 //===== START OF CONFIGURATION =====
 
@@ -27,7 +30,7 @@ if($failed) exit(1);
 $baseDir = "/home/guillaume/AddOns";
 
 // This is where old versions will be moved (no pruning)
-$backupDir = "/home/guillaume/.addonBackup";
+$backupDir = HOME.DIR_SEP.".addonBackup";
 
 // Must be one of 'release', 'beta' or 'alpha'.
 $defaultKind = 'beta';
@@ -39,6 +42,11 @@ $wantNolib = true;
 $maxConcurrent = 10;
 
 //===== END OF CONFIGURATION =====
+
+// Override default configuration
+if(file_exists(HOME.DIR_SEP.'.wowaceUpdater.conf')) {
+	@include_once(HOME.DIR_SEP.'.wowaceUpdater.conf');
+}
 
 $defaultCurlOptions = array(
 	CURLOPT_FOLLOWLOCATION => true,
