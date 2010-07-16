@@ -97,7 +97,7 @@ function buildStrings($strings, $withComments = true) {
 	$lines = array();
 	foreach($strings as $file => $strs) {
 		if($withComments) {
-			$lines[] = "\n-- $file\n";
+			$lines[] = "\n-- ".str_replace(DIRECTORY_SEPARATOR, '/', $file)."\n";
 			ksort($strs);
 		}
 		foreach($strs as $k => $v) {
@@ -123,6 +123,7 @@ function updateLocales($parts) {
 
 	// Fetch strings to wowace
 	if($API_KEY) {
+		dl("php_curl");
 		print("Importing enUS strings into wowace localization system: "); flush();
 		$ch = curl_init("http://www.wowace.com/addons/$project/localization/import/?api-key=".$API_KEY);
 		curl_setopt_array($ch, array(
