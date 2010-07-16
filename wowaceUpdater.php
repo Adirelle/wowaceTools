@@ -10,7 +10,7 @@ if($major < 5 || ($major == 5 && $minor < 2)) {
 	print("PHP >= 5.2 is required !\n");
 	$failed = true;
 }
-foreach(array('ZIP', 'cURL') as $ext) {
+foreach(array('ZIP', 'cURL', 'SimpleXML') as $ext) {
 	if(!extension_loaded($ext) && !extension_loaded('php_'.$ext)) {
 		@dl($ext);
 		@dl('php_'.$ext);
@@ -43,6 +43,9 @@ $maxConcurrent = 10;
 
 // Do not really modify the files
 $dryRun = false;
+
+// The URL of *your* wowinterface favorites RSS feed
+$wowiFavoritesURL = null;
 
 //===== END OF CONFIGURATION =====
 
@@ -116,7 +119,7 @@ while($entry = readdir($dh)) {
 			}
 		} elseif(isset($values['X-WoWI-ID'])) {
 			$project = $values['X-WoWI-ID'];
-			$version = file_exists($path.'.version') ? trim(file_get_contents($path.'.version')) :  null;
+			$version = file_exists($path.'.version') ? trim(file_get_contents($path.'.version')) : "unknown";
 			if(!isset($addons[$project])) {
 				$addon = new StdClass();
 				$addons[$project] = $addon;
@@ -146,8 +149,16 @@ print("Fetching latest package data.\n");
 $mch = curl_multi_init();
 $handles = array();
 $queue = array();
-
 $num = 0;
+
+if($wowiCount > 0 && $wowiFavoritesURL) {
+	$mh = curl_init($wowiFavoritesURL);
+	curl_setopt_array($mh, $defaultCurlOptions);
+	$queue[] = $mh;
+	$handles[intval($mh)] = "wowiFavorites";
+	$num++;
+}
+
 foreach($addons as $key => $addon) {
 	if($addon->source == "wowace") {
 		$mh = curl_init('http://www.wowace.com/addons/'.$addon->project.'/files/');
@@ -157,6 +168,8 @@ foreach($addons as $key => $addon) {
 		$num++;
 	}
 }
+
+date_default_timezone_set("UTC");
 
 $active = 0;
 $done = 0;
@@ -170,59 +183,78 @@ do {
 	while(false !== ($info = curl_multi_info_read($mch))) {
 		if($info['msg'] == CURLMSG_DONE) {
 			$done++;
-			$mh = $info['handle'];
+			$mh = $info['handle'];			
 			$addon = $handles[intval($mh)];
 			unset($handles[intval($mh)]);
 			if($info['result'] == CURLE_OK) {
 				$html = curl_multi_getcontent($mh);
-				$addon->available = array();
-				$current = null;
-				foreach(preg_split("/\s*\n\s*/", $html, null, PREG_SPLIT_NO_EMPTY) as $line) {
-					if(preg_match('@<td class="col-file"><a href="(/addons/.+?/)">(.+?)</a></td>@', $line, $parts)) {
-						$version = cleanupVersion($parts[2], $addon);
-						preg_match('@^(.+?)(-nolib)?$@i', $version, $versionParts);
-						$current = array(
-							'version' => $version,
-							'baseVersion' => $versionParts[1],
-							'nolib' => !empty($versionParts[2]),
-							'link' => 'http://www.wowace.com'.$parts[1],
-							'ok' => false,
-						);
-					} elseif($current) {
-						if(preg_match('@<td class="col-type"><.+>(alpha|beta|release)<.+></td>@i', $line, $parts)) {
-							$current['kind'] = strtolower($parts[1]);
-						} elseif(preg_match('@<td class="col-status"><.+>normal<.+></td>@i', $line, $parts)) {
-							$current['ok'] = true;
-						} elseif(preg_match('@<td class="col-date"><.+ data-epoch="(\d+)">.*</span></td>@i', $line, $parts)) {
-							$current['timestamp'] = intval($parts[1]);
-						} elseif(preg_match('@<td class="col-filename">@i', $line)) {
-							if($current['ok'] && isset($current['kind']) && isset($current['timestamp'])) {
-								$kind = $current['kind'];
-								if($current['nolib']) {
-									if($wantNolib) {
-										$kind .= '-nolib';
-									} else {
-										$kind = false;
-									}
-								}
-								if($kind && (!isset($addon->available[$kind]) || $current['timestamp'] > $addon->available[$kind]['timestamp'])) {
-									unset($current['ok']);
-									unset($current['nolib']);
-									$addon->available[$kind] = $current;
+				if($addon == "wowiFavorites") {
+					$rss = simplexml_load_string($html);
+					foreach($rss->channel->item as $item) {
+						if(preg_match('@downloads/info(\d+)-(.+?)\.html@i', $item->link, $parts)) {
+							list(, $project, $version) = $parts;
+							$version = preg_replace("/%([0-9a-f]{2})/ie", 'chr(0x\1)', $version);
+							$project = intval($project);
+							if(isset($addons[$project])) {
+								$addon = $addons[$project];
+								$date = strtotime($item->pubDate);
+								if(!isset($addon->newversion) || $date > $addon->newdate) {
+									$addon->newversion = $version;
+									$addon->newdate = $date;
 								}
 							}
-							$current = null;
 						}
 					}
-				}
-				if($wantNolib) {
-					foreach(array('alpha', 'beta', 'release') as $kind) {
-						$kindNolib = $kind.'-nolib';
-						if(isset($addon->available[$kindNolib])) {
-							if(!isset($addon->available[$kind]) || $addon->available[$kindNolib]['baseVersion'] == $addon->available[$kind]['baseVersion']) {
-								$addon->available[$kind] = $addon->available[$kindNolib];
+				} else {
+					$addon->available = array();
+					$current = null;
+					foreach(preg_split("/\s*\n\s*/", $html, null, PREG_SPLIT_NO_EMPTY) as $line) {
+						if(preg_match('@<td class="col-file"><a href="(/addons/.+?/)">(.+?)</a></td>@', $line, $parts)) {
+							$version = cleanupVersion($parts[2], $addon);
+							preg_match('@^(.+?)(-nolib)?$@i', $version, $versionParts);
+							$current = array(
+								'version' => $version,
+								'baseVersion' => $versionParts[1],
+								'nolib' => !empty($versionParts[2]),
+								'link' => 'http://www.wowace.com'.$parts[1],
+								'ok' => false,
+							);
+						} elseif($current) {
+							if(preg_match('@<td class="col-type"><.+>(alpha|beta|release)<.+></td>@i', $line, $parts)) {
+								$current['kind'] = strtolower($parts[1]);
+							} elseif(preg_match('@<td class="col-status"><.+>normal<.+></td>@i', $line, $parts)) {
+								$current['ok'] = true;
+							} elseif(preg_match('@<td class="col-date"><.+ data-epoch="(\d+)">.*</span></td>@i', $line, $parts)) {
+								$current['timestamp'] = intval($parts[1]);
+							} elseif(preg_match('@<td class="col-filename">@i', $line)) {
+								if($current['ok'] && isset($current['kind']) && isset($current['timestamp'])) {
+									$kind = $current['kind'];
+									if($current['nolib']) {
+										if($wantNolib) {
+											$kind .= '-nolib';
+										} else {
+											$kind = false;
+										}
+									}
+									if($kind && (!isset($addon->available[$kind]) || $current['timestamp'] > $addon->available[$kind]['timestamp'])) {
+										unset($current['ok']);
+										unset($current['nolib']);
+										$addon->available[$kind] = $current;
+									}
+								}
+								$current = null;
 							}
-							unset($addon->available[$kindNolib]);
+						}
+					}
+					if($wantNolib) {
+						foreach(array('alpha', 'beta', 'release') as $kind) {
+							$kindNolib = $kind.'-nolib';
+							if(isset($addon->available[$kindNolib])) {
+								if(!isset($addon->available[$kind]) || $addon->available[$kindNolib]['baseVersion'] == $addon->available[$kind]['baseVersion']) {
+									$addon->available[$kind] = $addon->available[$kindNolib];
+								}
+								unset($addon->available[$kindNolib]);
+							}
 						}
 					}
 				}
@@ -285,14 +317,24 @@ foreach($addons as $key => $addon) {
 			$addon->newversion = $selected['version'];
 		}
 	} elseif($addon->source == "wowi") {
-		$addon->newversion  = "latest";
-		printf("%s from wowi\n", $addon->name);
+		if(isset($addon->newversion)) {
+			if($addon->newversion != $addon->version) {
+				$addon->url = sprintf("http://fs.wowinterface.com/patcher.php?id=%d", $addon->project);
+			} else {
+				unset($addons[$key]);
+				continue;
+			}
+		} else {
+			$addon->newversion  = "latest";
+			$addon->url = sprintf("http://fs.wowinterface.com/patcher.php?id=%d", $addon->project);
+		}
+		printf("%s: %s ===> %s\n", $addon->name, $addon->version, $addon->newversion);
 	}
 }
 
 if(count($addons) == 0) {
 	printf("Nothing to update.\n");
-		exit(0);
+	exit(0);
 }
 
 // Now get the download page, scrape it to extract the file path, then download it
@@ -303,10 +345,8 @@ $handles = array();
 $queue = array();
 $num = 0;
 
-define('TMP', getenv('TMP'));
 function downloadFile($addon, $url, $filename) {
 	global $handles, $queue, $num, $defaultCurlOptions;
-	$tmpfile = getenv("TMP").DIR_SEP.$filename;
 	$tmpfile = tempnam('/tmp', $filename.'-');
 	register_shutdown_function('unlink', $tmpfile);
 	$fh = fopen($tmpfile, 'w');
@@ -332,14 +372,14 @@ function downloadFile($addon, $url, $filename) {
 }
 
 foreach($addons as $key => $addon) {
-	if($addon->source == "wowace") {
+	if(isset($addon->url)) {
+		downloadFile($addon, $addon->url, $addon->name);
+	} elseif(isset($addon->selected)) {
 		$mh = curl_init($addon->selected);
 		curl_setopt_array($mh, $defaultCurlOptions);
 		$queue[] = $mh;
 		$handles[intval($mh)] = $addon;
 		$num++;
-	} elseif($addon->source == "wowi") {
-		downloadFile($addon, sprintf("http://fs.wowinterface.com/patcher.php?id=%d", $addon->project), $addon->name);
 	}
 }
 
