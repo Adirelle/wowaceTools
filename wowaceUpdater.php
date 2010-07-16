@@ -10,7 +10,7 @@ if($major < 5 || ($major == 5 && $minor < 2)) {
 	print("PHP >= 5.2 is required !\n");
 	$failed = true;
 }
-foreach(array('ZIP', 'cURL', 'SimpleXML') as $ext) {
+foreach(array('ZIP', 'cURL') as $ext) {
 	if(!extension_loaded($ext) && !extension_loaded('php_'.$ext)) {
 		@dl($ext);
 		@dl('php_'.$ext);
@@ -74,6 +74,8 @@ function pruneFailedAddons() {
 	}
 }
 
+$wowaceCount = 0;
+$wowiCount = 0;
 
 // Build the list of updatable addons from the directory
 $dh = opendir($baseDir);
@@ -99,6 +101,8 @@ while($entry = readdir($dh)) {
 				$addon->name = isset($values['X-Curse-Project-Name']) ? $values['X-Curse-Project-Name'] : $entry;
 				$addon->dirs = array();
 				$addon->version = cleanupVersion($version, $addon);
+				$addon->source = "wowace";
+				$wowaceCount++;
 			} else {
 				$addon = $addons[$project];
 			}
@@ -110,6 +114,21 @@ while($entry = readdir($dh)) {
 			} elseif(file_exists($path.'.release')) {
 				$addon->kind = 'release';
 			}
+		} elseif(isset($values['X-WoWI-ID'])) {
+			$project = $values['X-WoWI-ID'];
+			$version = file_exists($path.'.version') ? trim(file_get_contents($path.'.version')) :  null;
+			if(!isset($addons[$project])) {
+				$addon = new StdClass();
+				$addons[$project] = $addon;
+				$addon->project = $project;
+				$addon->name = $entry;
+				$addon->dirs = array($entry);
+				$addon->version = cleanupVersion($version, $addon);
+				$addon->source = "wowi";
+				$wowiCount++;
+			} else {
+				$addons[$project]->dirs[] = $entry;
+			}
 		}
 	}
 }
@@ -120,7 +139,7 @@ function addonSort($a, $b) {
 }
 uasort($addons, "addonSort");
 
-printf("Found %d addons.\n", count($addons));
+printf("Found %d addons, %d from wowace and %d from wowinterface.\n", count($addons), $wowaceCount, $wowiCount);
 
 // Fetch files.rss to get package informations using concurrent requests.
 print("Fetching latest package data.\n");
@@ -128,14 +147,17 @@ $mch = curl_multi_init();
 $handles = array();
 $queue = array();
 
+$num = 0;
 foreach($addons as $key => $addon) {
-	$mh = curl_init('http://www.wowace.com/addons/'.$addon->project.'/files/');
-	curl_setopt_array($mh, $defaultCurlOptions);
-	$queue[] = $mh;
-	$handles[intval($mh)] = $addon;
+	if($addon->source == "wowace") {
+		$mh = curl_init('http://www.wowace.com/addons/'.$addon->project.'/files/');
+		curl_setopt_array($mh, $defaultCurlOptions);
+		$queue[] = $mh;
+		$handles[intval($mh)] = $addon;
+		$num++;
+	}
 }
 
-$num = count($addons);
 $active = 0;
 $done = 0;
 $lastdone = -1;
@@ -231,35 +253,40 @@ $resolveFilters = array(
 
 // Selected version to be installed
 foreach($addons as $key => $addon) {
-	$selected = false;
-	$kind = isset($addon->kind) ? $addon->kind : $defaultKind;
-	foreach($resolveFilters[$kind] as $filter) {
-		foreach($addon->available as $pkg) {
-			if(in_array($pkg['kind'], $filter)) {
-				if(!$selected || $pkg['timestamp'] > $selected['timestamp']) {
-					$selected = $pkg;
+	if($addon->source == "wowace") {
+		$selected = false;
+		$kind = isset($addon->kind) ? $addon->kind : $defaultKind;
+		foreach($resolveFilters[$kind] as $filter) {
+			foreach($addon->available as $pkg) {
+				if(in_array($pkg['kind'], $filter)) {
+					if(!$selected || $pkg['timestamp'] > $selected['timestamp']) {
+						$selected = $pkg;
+					}
 				}
 			}
+			if($selected) {
+				break;
+			}
 		}
-		if($selected) {
-			break;
+		if(!$selected) {
+			printf("%s: no suitable version found !\n", $addon->name);
+			unset($addons[$key]);
+			continue;
 		}
-	}
-	if(!$selected) {
-		printf("%s: no suitable version found !\n", $addon->name);
-		unset($addons[$key]);
-		continue;
-	}
-	if($addon->version == $selected['version']) {
-		// Already installed, we're done with this one
-		//printf("%s: current: %s, latest %s: %s (%s), up to date !\n", $addon->name, $addon->version, $kind, $selected['version'], $selected['kind']);
-		unset($addons[$key]);
-	} else {
-		// Need update
-		printf("%s (%s): %s ===> %s (%s)\n", $addon->name, $kind, $addon->version, $selected['version'], $selected['kind']);
-		unset($addon->available);
-		$addon->selected = $selected['link'];
-		$addon->newversion = $selected['version'];
+		if($addon->version == $selected['version']) {
+			// Already installed, we're done with this one
+			//printf("%s: current: %s, latest %s: %s (%s), up to date !\n", $addon->name, $addon->version, $kind, $selected['version'], $selected['kind']);
+			unset($addons[$key]);
+		} else {
+			// Need update
+			printf("%s (%s): %s ===> %s (%s)\n", $addon->name, $kind, $addon->version, $selected['version'], $selected['kind']);
+			unset($addon->available);
+			$addon->selected = $selected['link'];
+			$addon->newversion = $selected['version'];
+		}
+	} elseif($addon->source == "wowi") {
+		$addon->newversion  = "latest";
+		printf("%s from wowi\n", $addon->name);
 	}
 }
 
@@ -274,14 +301,48 @@ printf("Downloading %d files\n", count($addons));
 $mch = curl_multi_init();
 $handles = array();
 $queue = array();
-foreach($addons as $key => $addon) {
-	$mh = curl_init($addon->selected);
-	curl_setopt_array($mh, $defaultCurlOptions);
-	$queue[] = $mh;
-	$handles[intval($mh)] = $addon;
+$num = 0;
+
+define('TMP', getenv('TMP'));
+function downloadFile($addon, $url, $filename) {
+	global $handles, $queue, $num, $defaultCurlOptions;
+	$tmpfile = getenv("TMP").DIR_SEP.$filename;
+	$tmpfile = tempnam('/tmp', $filename.'-');
+	register_shutdown_function('unlink', $tmpfile);
+	$fh = fopen($tmpfile, 'w');
+	if($fh) {
+		$addon->fh = $fh;
+		$addon->origfilename = $filename;
+		$addon->filename = $tmpfile;
+		$mh = curl_init($url);
+		if($mh) {
+			$addon->url = $url;
+			curl_setopt_array($mh, $defaultCurlOptions);
+			curl_setopt($mh, CURLOPT_RETURNTRANSFER, false);
+			curl_setopt($mh, CURLOPT_FILE, $fh);
+			$handles[intval($mh)] = $addon;
+			$num++;
+			$queue[] = $mh;
+		} else {
+			$addon->failure = sprintf("cannot download %s", $url);
+		}
+	} else {
+		$addon->failure = sprintf("cannot create file %s", $tmpfile);
+	}
 }
 
-$num = count($addons) * 2;
+foreach($addons as $key => $addon) {
+	if($addon->source == "wowace") {
+		$mh = curl_init($addon->selected);
+		curl_setopt_array($mh, $defaultCurlOptions);
+		$queue[] = $mh;
+		$handles[intval($mh)] = $addon;
+		$num++;
+	} elseif($addon->source == "wowi") {
+		downloadFile($addon, sprintf("http://fs.wowinterface.com/patcher.php?id=%d", $addon->project), $addon->name);
+	}
+}
+
 $done = 0;
 $lastdone = -1;
 $active = 0;
@@ -302,36 +363,11 @@ do {
 				curl_close($mh);
 				if(empty($page)) {
 					$addon->failure = sprintf('Download of %s failed', $addon->selected);
-					$done++;
 				} elseif(preg_match('@<dd><a href="(http://.+?/.+?\.zip)">(.+?\.zip)</a></dd>@i', $page, $parts)) {
 					@list(, $url, $filename) = $parts;
-					$tmpfile = tempnam('/tmp', $filename.'-');
-					register_shutdown_function('unlink', $tmpfile);
-					//$tmpfile = '/tmp/'.$filename;
-					$fh = fopen($tmpfile, 'w');
-					if($fh) {
-						$addon->fh = $fh;
-						$addon->origfilename = $filename;
-						$addon->filename = $tmpfile;
-						$mh = curl_init($url);
-						if($mh) {
-							$addon->url = $url;
-							curl_setopt_array($mh, $defaultCurlOptions);
-							curl_setopt($mh, CURLOPT_RETURNTRANSFER, false);
-							curl_setopt($mh, CURLOPT_FILE, $fh);
-							$handles[intval($mh)] = $addon;
-							$queue[] = $mh;
-						} else {
-							$addon->failure = sprintf("cannot download %s", $url);
-							$done++;
-						}
-					} else {
-						$addon->failure = sprintf("cannot create file %s", $tmpfile);
-						$done++;
-					}
+					downloadFile($addon, $url, $filename);
 				} else {
 					$addon->failure = sprintf('cannot find the package URL in %s', $addon->selected);
-					$done++;
 				}
 				unset($addon->selected);
 			} elseif(isset($addon->url)) {
