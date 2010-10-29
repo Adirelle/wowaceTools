@@ -1,4 +1,4 @@
-#!/usr/bin/php
+#!/usr/bin/php5 -f
 <?php
 define("DIR_SEP", DIRECTORY_SEPARATOR);
 error_reporting(-1);
@@ -79,61 +79,101 @@ function pruneFailedAddons() {
 
 $wowaceCount = 0;
 $wowiCount = 0;
+$modules = array();
+$sources = array();
+$frozen = array();
+$unknowns = array();
 
 // Build the list of updatable addons from the directory
 $dh = opendir($baseDir);
 while($entry = readdir($dh)) {
 	$path = $baseDir.DIR_SEP.$entry.DIR_SEP;
-	if(is_dir($path) && file_exists($path.$entry.'.toc') && !file_exists($path.'.git') && !file_exists($path.'.svn') && !file_exists($path.'.freeze')) {
-		$values = array();
-		$fh = fopen($path.$entry.'.toc', 'r');
-		while($line = fgets($fh)) {
-			$line = trim($line);
-			if(preg_match('/^##\s*(.+)\s*:\s*(.+)\s*$/i', $line, $parts)) {
-				$values[$parts[1]] = $parts[2];
-			}
-		}
-		fclose($fh);
-		if(isset($values['X-Curse-Project-ID']) && isset($values['X-Curse-Packaged-Version'])) {
-			$project = $values['X-Curse-Project-ID'];
-			$version = file_exists($path.'.version') ? trim(file_get_contents($path.'.version')) : $values['X-Curse-Packaged-Version'];
-			if(!isset($addons[$project])) {
-				$addon = new StdClass();
-				$addons[$project] = $addon;
-				$addon->project = $project;
-				$addon->name = isset($values['X-Curse-Project-Name']) ? $values['X-Curse-Project-Name'] : $entry;
-				$addon->dirs = array();
-				$addon->version = cleanupVersion($version, $addon);
-				$addon->source = "wowace";
-				$wowaceCount++;
-			} else {
-				$addon = $addons[$project];
-			}
-			$addon->dirs[] = $entry;
-			if(file_exists($path.'.alpha')) {
-				$addon->kind = 'alpha';
-			} elseif(file_exists($path.'.beta')) {
-				$addon->kind = 'beta';
-			} elseif(file_exists($path.'.release')) {
-				$addon->kind = 'release';
-			}
-		} elseif(isset($values['X-WoWI-ID'])) {
-			$project = $values['X-WoWI-ID'];
-			$version = file_exists($path.'.version') ? trim(file_get_contents($path.'.version')) : "unknown";
-			if(!isset($addons[$project])) {
-				$addon = new StdClass();
-				$addons[$project] = $addon;
-				$addon->project = $project;
-				$addon->name = $entry;
-				$addon->dirs = array($entry);
-				$addon->version = cleanupVersion($version, $addon);
-				$addon->source = "wowi";
-				$wowiCount++;
-			} else {
-				$addons[$project]->dirs[] = $entry;
-			}
+	if(!is_dir($path) || !file_exists($path.$entry.'.toc')) {
+		continue;
+	}
+
+	if(file_exists($path.'.git') || file_exists($path.'.svn')) {
+		$sources[] = $entry;
+		continue;
+	}
+
+	if(file_exists($path.'.freeze')) {
+		$frozen[] = $entry;
+		continue;
+	}
+
+	$headers = array();
+	$fh = fopen($path.$entry.'.toc', 'r');
+	while($line = fgets($fh)) {
+		$line = trim($line);
+		if(preg_match('/^##\s*(.+)\s*:\s*(.+)\s*$/i', $line, $parts)) {
+			$headers[$parts[1]] = $parts[2];
 		}
 	}
+	fclose($fh);
+
+	if(!empty($headers['RequiredDeps']) || !empty($headers['Dependencies'])) {
+		$modules[] = $entry;
+		continue;
+	}
+
+	$addon = new StdClass();
+	$addon->dirs = array();
+
+	if(isset($headers['X-Curse-Project-ID']) && isset($headers['X-Curse-Packaged-Version'])) {
+		$addon->project = $headers['X-Curse-Project-ID'];
+		$addon->version = @$headers['X-Curse-Packaged-Version'];
+		$addon->name = isset($headers['X-Curse-Project-Name']) ? $headers['X-Curse-Project-Name'] : $entry;
+		$addon->source = "wowace";
+		if(file_exists($path.'.alpha')) {
+			$addon->kind = 'alpha';
+		} elseif(file_exists($path.'.beta')) {
+			$addon->kind = 'beta';
+		} elseif(file_exists($path.'.release')) {
+			$addon->kind = 'release';
+		}
+	} elseif(isset($headers['X-WoWI-ID'])) {
+		$addon->project = $headers['X-WoWI-ID'];
+		$addon->name = $entry;
+		$addon->source = "wowi";
+		$addon->kind = null;
+	}
+	if(file_exists($path.'.version') && !isset($addon->version)) {
+		$addon->version = trim(file_get_contents($path.'.version'));
+	}
+	if(file_exists($path.'.addon-data.ini')) {
+		$data = parse_ini_file($path.'.addon-data.ini');
+		if($data) {
+			foreach($data as $key => $value) {
+				if(!empty($addon->$key) && $addon->$key == $value) {
+					unset($data[$key]);
+				} else {
+					$addon->$key = $value;
+				}
+			}
+			$addon->data = $data;
+		}
+	}
+	if(!isset($addon->project)) {
+		$unknowns[] = $entry;
+		continue;
+	}
+	if(isset($addon->version)) {
+		$addon->version = cleanupVersion($addon->version, $addon);
+	} else {
+		$addon->version = "unknown";
+	}
+	if(!isset($addons[$addon->project])) {
+		$addons[$addon->project] = $addon;
+		if($addon->source == "wowace") {
+			$wowaceCount++;
+		} else {
+			$wowiCount++;
+		}
+	} else {
+		$addon = $addons[$project];
+	}
+	$addon->dirs[] = $entry;
 }
 closedir($dh);
 
@@ -142,7 +182,27 @@ function addonSort($a, $b) {
 }
 uasort($addons, "addonSort");
 
-printf("Found %d addons, %d from wowace and %d from wowinterface.\n", count($addons), $wowaceCount, $wowiCount);
+//sort($frozen);
+//sort($sources);
+//sort($modules);
+sort($unknowns);
+
+printf("Found %d addons:
+- wowace: %d
+- wowinterface: %d
+- frozen: %d
+- sources: %d
+- modules: %d
+- unknown: %d %s
+",
+	count($addons) + count($frozen) + count($sources) + count($modules) + count($modules),
+	$wowaceCount,
+	$wowiCount,
+	count($frozen),
+	count($sources),
+	count($modules),
+	count($unknowns), count($unknowns) > 0 ? "[ ".join(", ", $unknowns)." ]" : ""
+);
 
 // Fetch files.rss to get package informations using concurrent requests.
 print("Fetching latest package data.\n");
@@ -183,7 +243,7 @@ do {
 	while(false !== ($info = curl_multi_info_read($mch))) {
 		if($info['msg'] == CURLMSG_DONE) {
 			$done++;
-			$mh = $info['handle'];			
+			$mh = $info['handle'];
 			$addon = $handles[intval($mh)];
 			unset($handles[intval($mh)]);
 			if($info['result'] == CURLE_OK) {
@@ -287,7 +347,7 @@ $resolveFilters = array(
 foreach($addons as $key => $addon) {
 	if($addon->source == "wowace") {
 		$selected = false;
-		$kind = isset($addon->kind) ? $addon->kind : $defaultKind;
+		$kind = !empty($addon->kind) ? $addon->kind : $defaultKind;
 		foreach($resolveFilters[$kind] as $filter) {
 			foreach($addon->available as $pkg) {
 				if(in_array($pkg['kind'], $filter)) {
@@ -486,13 +546,29 @@ foreach($addons as $key => $addon) {
 		}
 	}
 	$za->extractTo($baseDir);
+
+	$data = isset($addon->data) ? $addon->data : array();
+	$data['project'] = $addon->project;
+	$data['name'] = $addon->name;
+	$data['source'] = $addon->source;
+	$data['version'] = $addon->newversion;
+	if(!empty($addon->kind)) {
+		$data['kind'] = $addon->kind;
+	}
+	$lines = array();
+	foreach($data as $key=>$value) {
+		if(is_int($value)) {
+			$lines[] = sprintf("%s=%d\n", $key, $value);
+		} else {
+			$lines[] = sprintf("%s=\"%s\"\n", $key, $value);
+		}
+	}
+	$dataStr = join("", $lines);
+
 	for($index = 0; $index < $za->numFiles; $index++) {
 		$entry = $za->statIndex($index);
 		if(preg_match('@^([^/]+)/\1\.toc$@i', $entry['name'], $parts)) {
-			file_put_contents($baseDir.DIR_SEP.$parts[1].DIR_SEP.'.version', $addon->newversion);
-			if(isset($addon->kind)) {
-				file_put_contents($baseDir.DIR_SEP.$parts[1].DIR_SEP.'.'.$addon->kind, "");
-			}
+			file_put_contents($baseDir.DIR_SEP.$parts[1].DIR_SEP.'.addon-data.ini', $dataStr);
 		}
 	}
 	$za->close();

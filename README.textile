@@ -30,7 +30,15 @@ The script will ignore any addon directory containing one of these file or direc
 * @.svn@
 * @.freeze@
 
-You can override the default kind of installation by creating an empty file named either @.release@, @.beta@ or @.alpha@ in the addon directory.
+Working data is stored in a file named ".addon-data.ini". The typical values it contains are:
+
+pre. source="wowi" ; wowi=wowinterface, wowace=wowace/curseforge
+name="Human-readable name"
+project=15874 ; number for wowinterface, project slug for wowace
+version="1.0-nolib" ; installed/detected version
+kind="beta" ; optional, override default kind
+
+If the script failed to identify an addon from the TOC headers, you could provide such file with at least the name, the project code and the source.
 
 h1. UpdateLocalization.php
 
