@@ -88,7 +88,7 @@ $unknowns = array();
 $dh = opendir($baseDir);
 while($entry = readdir($dh)) {
 	$path = $baseDir.DIR_SEP.$entry.DIR_SEP;
-	if(!is_dir($path) || !file_exists($path.$entry.'.toc')) {
+	if(!is_dir($baseDir.DIR_SEP.$entry) || !file_exists($path.$entry.'.toc')) {
 		continue;
 	}
 
@@ -112,7 +112,7 @@ while($entry = readdir($dh)) {
 	}
 	fclose($fh);
 
-	if(!empty($headers['RequiredDeps']) || !empty($headers['Dependencies'])) {
+	if(is_link($baseDir.DIR_SEP.$entry) || !empty($headers['RequiredDeps']) || !empty($headers['Dependencies'])) {
 		$modules[] = $entry;
 		continue;
 	}
