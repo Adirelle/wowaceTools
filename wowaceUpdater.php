@@ -171,7 +171,7 @@ while($entry = readdir($dh)) {
 			$wowiCount++;
 		}
 	} else {
-		$addon = $addons[$project];
+		$addon = $addons[$addon->project];
 	}
 	$addon->dirs[] = $entry;
 }
