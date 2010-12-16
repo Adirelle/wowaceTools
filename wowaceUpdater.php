@@ -119,6 +119,7 @@ while($entry = readdir($dh)) {
 
 	$addon = new StdClass();
 	$addon->dirs = array();
+	$addon->wantNolib = $wantNolib;
 
 	if(isset($headers['X-Curse-Project-ID']) && isset($headers['X-Curse-Packaged-Version'])) {
 		$addon->project = $headers['X-Curse-Project-ID'];
@@ -145,7 +146,7 @@ while($entry = readdir($dh)) {
 		$data = parse_ini_file($path.'.addon-data.ini');
 		if($data) {
 			foreach($data as $key => $value) {
-				if(!empty($addon->$key) && $addon->$key == $value) {
+				if(isset($addon->$key) && $addon->$key == $value) {
 					unset($data[$key]);
 				} else {
 					$addon->$key = $value;
@@ -290,7 +291,7 @@ do {
 								if($current['ok'] && isset($current['kind']) && isset($current['timestamp'])) {
 									$kind = $current['kind'];
 									if($current['nolib']) {
-										if($wantNolib) {
+										if($addon->wantNolib) {
 											$kind .= '-nolib';
 										} else {
 											$kind = false;
@@ -306,7 +307,7 @@ do {
 							}
 						}
 					}
-					if($wantNolib) {
+					if($addon->wantNolib) {
 						foreach(array('alpha', 'beta', 'release') as $kind) {
 							$kindNolib = $kind.'-nolib';
 							if(isset($addon->available[$kindNolib])) {
