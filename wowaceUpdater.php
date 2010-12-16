@@ -54,6 +54,15 @@ if(file_exists(HOME.DIR_SEP.'.wowaceUpdater.conf')) {
 	@include_once(HOME.DIR_SEP.'.wowaceUpdater.conf');
 }
 
+if($backupDir) {
+	if(!is_dir($backupDir) || !is_writable($backupDir)) {
+		die("Backup directory doesn't exist or isn't writable: $backupDir");
+	}
+} else {
+	print("WARNING: backup disabled !\n");
+	$backupDir = false;
+}
+
 $defaultCurlOptions = array(
 	CURLOPT_FOLLOWLOCATION => true,
 	CURLOPT_AUTOREFERER => true,
@@ -524,26 +533,28 @@ foreach($addons as $key => $addon) {
 		printf("Cannot open the zip archive %s: %d !\n", $addon->filename, $err);
 		continue;
 	}
-	$backupPath = $backupDir.DIR_SEP.$addon->project.'-'.$addon->version;
-	if(!file_exists($backupPath)) {
-		if(mkdir($backupPath, 0755, true)) {
-			$failed = false;
-			$dirs = $addon->dirs;
-			foreach($dirs as $i => $dir) {
-				if(!rename($baseDir.DIR_SEP.$dir, $backupPath.DIR_SEP.$dir)) {
-					printf("cannot backup %s, skipped.", $addon->name);
-					for($j = 0; $j < $i; $j++) {
-						@rename($backupPath.DIR_SEP.$dirs[$j], $baseDir.DIR_SEP.$dirs[$j]);
+	if($backupDir) {
+		$backupPath = $backupDir.DIR_SEP.$addon->project.'-'.$addon->version;
+		if(!file_exists($backupPath)) {
+			if(mkdir($backupPath, 0755, true)) {
+				$failed = false;
+				$dirs = $addon->dirs;
+				foreach($dirs as $i => $dir) {
+					if(!rename($baseDir.DIR_SEP.$dir, $backupPath.DIR_SEP.$dir)) {
+						printf("Cannot backup %s, skipped.", $addon->name);
+						for($j = 0; $j < $i; $j++) {
+							@rename($backupPath.DIR_SEP.$dirs[$j], $baseDir.DIR_SEP.$dirs[$j]);
+						}
+						@rmdir($backupPath);
+						$failed = true;
+						break;
 					}
-					@rmdir($backupPath);
-					$failed = true;
-					break;
 				}
+				if($failed) continue;
+			} else {
+				printf("Cannot backup %s, skipped.", $addon->name);
+				continue;
 			}
-			if($failed) continue;
-		} else {
-			printf("cannot backup %s, skipped.", $addon->name);
-			continue;
 		}
 	}
 	$za->extractTo($baseDir);
