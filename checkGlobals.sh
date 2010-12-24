@@ -1,3 +1,6 @@
 #!/bin/bash
 
-luac -p -l "$@" | perl -ne '/[SG]ETGLOBAL.*?; (.*)$/ and print "$1\n"' | fgrep -v -f "$(dirname $0)/wowglobals.txt" | sort -u
+for SRC in "$@"; do
+	luac -p -l "$SRC" | perl -ne '/\[(\d+)\].*[SG]ETGLOBAL.*?; (.*)$/ and print "'"$SRC"':$1: $2\n"' 
+done | fgrep -v -f "$(dirname $0)/wowglobals.txt"
+
