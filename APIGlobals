@@ -19947,3 +19947,13 @@ GetItemFamily
 hooksecurefunc
 IsModifierKeyDown
 GetCoinTextureString
+EnableAddOn
+IsLoggedIn
+GetMacroBody
+IsHelpfulItem
+IsHelpfulSpell
+GetMacroSpell
+GetMacroItem
+issecurevariable
+_ERRORMESSAGE
+GetAddOnMetadata
