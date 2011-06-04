@@ -5982,6 +5982,7 @@ EMPTY_SOCKET_RED
 EMPTY_SOCKET_YELLOW
 EMPTY_STABLE_SLOT
 ENABLE
+EnableAddOn
 EnableAllAddOns
 ENABLE_ALL_SHADERS
 ENABLE_AMBIENCE
@@ -6597,6 +6598,7 @@ error
 ERROR_CANNOT_BIND
 ERROR_CAPS
 ERROR_CINEMATIC
+_ERRORMESSAGE
 ERRORS
 ERROR_SLASH_CHANGEACTIONBAR
 ERROR_SLASH_EQUIP_TO_SLOT
@@ -7615,6 +7617,7 @@ GetActiveTitle
 GetActiveVoiceChannel
 GetAddOnInfo
 GetAddOnMemoryUsage
+GetAddOnMetadata
 GetArchaeologyInfo
 GetArchaeologyRaceInfo
 GetAreaSpiritHealerTime
@@ -7675,6 +7678,7 @@ GetBindingText
 GetBlockChance
 GetBonusBarOffset
 GetBonusBarOverrideBarType
+GetBuildInfo
 GetBuybackItemInfo
 GetBuybackItemLink
 GetCallPetSpellInfo
@@ -7696,6 +7700,7 @@ GetChatWindowSavedPosition
 GetClickFrame
 GetCoinIcon
 GetCoinText
+GetCoinTextureString
 GetColoredName
 GetCombatRating
 GetCombatRatingBonus
@@ -7881,6 +7886,7 @@ GetInventoryItemsForSlot
 GetInventoryItemTexture
 GetInventorySlotInfo
 GetItemCooldown
+GetItemFamily
 GetItemInfo
 GetItemQualityColor
 GetItemSpell
@@ -7928,9 +7934,12 @@ GetLootRollTimeLeft
 GetLootSlotInfo
 GetLootThreshold
 GetLowBit
+GetMacroBody
 GetMacroIconInfo
 GetMacroInfo
+GetMacroItem
 GetMacroItemIconInfo
+GetMacroSpell
 GetMajorTalentTreeBonuses
 GetManagedEnvironment
 GetManaRegen
@@ -9613,6 +9622,7 @@ HONOR_STANDING
 HONOR_THIS_SESSION
 HONOR_TODAY
 HONOR_YESTERDAY
+hooksecurefunc
 HOSTILE
 HOUR_ONELETTER_ABBR
 HOURS
@@ -10122,6 +10132,8 @@ IsGlyphFlagSet
 IsGMClient
 IsGuildLeader
 IsGuildRankAssignmentAllowed
+IsHelpfulItem
+IsHelpfulSpell
 IsInActiveWorldPVP
 IsInArenaTeam
 IsInFakeRaid
@@ -10132,10 +10144,12 @@ IsInventoryItemLocked
 IsLFGDungeonJoinable
 IsListedInLFR
 IsListeningForMessageType
+IsLoggedIn
 IsMacClient
 IsMessageDoneBy
 IsMessageDoneTo
 IsModifiedClick
+IsModifierKeyDown
 IsMouseButtonDown
 IsMuted
 IsNormalActionBarState
@@ -10160,6 +10174,7 @@ IsReferAFriendLinked
 IsResting
 issecure
 IsSecureCmd
+issecurevariable
 IsSelectedSpellBookItem
 IsShiftKeyDown
 IsSilenced
@@ -14408,6 +14423,7 @@ RATING_CHANGE_TOOLTIP
 RATINGS_MENU
 RATINGS_TEXT
 rawget
+rawset
 RCTRL_KEY_TEXT
 REACTIVATE_RAID_LOCK
 READY
@@ -19941,19 +19957,3 @@ ZOOM_IN
 ZoomOut
 ZOOM_OUT
 ZOOM_OUT_BUTTON_TEXT
-rawset
-SlashCmdList
-GetItemFamily
-hooksecurefunc
-IsModifierKeyDown
-GetCoinTextureString
-EnableAddOn
-IsLoggedIn
-GetMacroBody
-IsHelpfulItem
-IsHelpfulSpell
-GetMacroSpell
-GetMacroItem
-issecurevariable
-_ERRORMESSAGE
-GetAddOnMetadata
