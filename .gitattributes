@@ -1,0 +1,5 @@
+*.lua	filter=trimTrailingSpaces
+*.xml	filter=trimTrailingSpaces
+*.toc	filter=trimTrailingSpaces
+*.php	filter=trimTrailingSpaces
+*.sh	filter=trimTrailingSpaces
