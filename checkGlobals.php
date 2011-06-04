@@ -17,6 +17,15 @@ if($retVal != 0) {
 	exit($retVal);
 }
 
+
+// Common aliases
+$aliases = array(
+	'tsort' => 'table.sort',
+	'tconcat' => 'table.concat',
+	'band' => 'bit.band',
+	'bor' => 'bit.bord',
+);
+
 // Read the API globals, to ignore in main chunks
 $api = array();
 $APIGlobalsFile = dirname($args[0]).DIRECTORY_SEPARATOR."APIGlobals";
@@ -27,14 +36,8 @@ while($word = fgets($fh)) {
 }
 fclose($fh);
 
-// Read the globals to ignore, from source comments
-$ignore = array(
-	'_G' => true,
-	'LibStub' => true,
-	'AdiDebug' => true
-);
-$warn = array('math' => true, 'string' => true, 'table' => true, 'bit' => true);
-
+// Read the source, looking for globals to ignore in comments and function names
+$ignore = array('_G' => true, 'LibStub' => true, 'AdiDebug' => true);
 $functions = array();
 
 $fh = fopen($file, "rt");
@@ -49,6 +52,14 @@ for($num = 1; $line = fgets($fh); $num++) {
 	}
 }
 fclose($fh);
+
+// Always warn for these globals
+$warn = array(
+	'math' => true,
+	'string' => true,
+	'table' => true,
+	'bit' => true
+);
 
 $chunk = null;
 $toLocals = array();
@@ -79,10 +90,10 @@ foreach($lines as $line) {
 			continue;
 		}
 		
-		if($action == 'GET' && isset($api[$word]) && !isset($warn[$word])) {
+		if($action == 'GET' && (isset($api[$word]) || isset($aliases[$word])) && !isset($warn[$word])) {
 			// Getting known API
 			
-			if($chunk != 'main') {
+			if($chunk != 'main' || isset($aliases[$word])) {
 				// Want it as an upvalue to prevent _G lookups
 				$toLocals[$word] = true;
 			}
@@ -96,10 +107,12 @@ foreach($lines as $line) {
 }
 
 if(!empty($toLocals)) {
+
+	// Output the locals
 	uksort($toLocals, "strnatcasecmp");
 	echo "local _G = _G\n";
 	foreach($toLocals as $word => $_) {
-		printf("local %s = _G.%s\n", $word, $word);
+		printf("local %s = _G.%s\n", $word, isset($aliases[$word]) ? $aliases[$word] : $word);
 	}
 }
 
