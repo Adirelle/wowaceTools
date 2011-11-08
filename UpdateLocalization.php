@@ -192,7 +192,7 @@ $enUSstrings
 
 	// Add other locales, from wowace localization pages
 	$first = true;
-	foreach(array("frFR", "deDE", "esMX", "ruRU", "esES", "zhTW", "zhCN", "koKR") as $lang) {
+	foreach(array("frFR", "deDE", "esMX", "ruRU", "esES", "zhTW", "zhCN", "koKR", "ptBR") as $lang) {
 		print("- fetching $lang locales: "); flush();
 		$langStrings = file_get_contents($baseUrl.$lang);
 		$lines[] = "\n------------------------ $lang ------------------------\n";
