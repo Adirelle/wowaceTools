@@ -1,4 +1,4 @@
-#!/usr/bin/php5 -f
+#!php -f
 <?php
 define("DIR_SEP", DIRECTORY_SEPARATOR);
 error_reporting(-1);
