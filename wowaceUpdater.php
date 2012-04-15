@@ -263,6 +263,26 @@ foreach($addons as $key => $addon) {
 
 date_default_timezone_set("UTC");
 
+function scrape_wowi_favorites($html) {
+	global $addons;
+	$rss = simplexml_load_string($html);
+	foreach($rss->channel->item as $item) {
+		if(preg_match('@downloads/info(\d+)-(.+?)\.html@i', $item->link, $parts)) {
+			list(, $project, $version) = $parts;
+			$version = preg_replace("/%([0-9a-f]{2})/ie", 'chr(0x\1)', $version);
+			$project = intval($project);
+			if(isset($addons[$project])) {
+				$addon = $addons[$project];
+				$date = strtotime($item->pubDate);
+				if(!isset($addon->newversion) || $date > $addon->newdate) {
+					$addon->newversion = $version;
+					$addon->newdate = $date;
+				}
+			}
+		}
+	}
+}
+
 $active = 0;
 $done = 0;
 $lastdone = -1;
@@ -281,22 +301,7 @@ do {
 			if($info['result'] == CURLE_OK) {
 				$html = curl_multi_getcontent($mh);
 				if($addon == "wowiFavorites") {
-					$rss = simplexml_load_string($html);
-					foreach($rss->channel->item as $item) {
-						if(preg_match('@downloads/info(\d+)-(.+?)\.html@i', $item->link, $parts)) {
-							list(, $project, $version) = $parts;
-							$version = preg_replace("/%([0-9a-f]{2})/ie", 'chr(0x\1)', $version);
-							$project = intval($project);
-							if(isset($addons[$project])) {
-								$addon = $addons[$project];
-								$date = strtotime($item->pubDate);
-								if(!isset($addon->newversion) || $date > $addon->newdate) {
-									$addon->newversion = $version;
-									$addon->newdate = $date;
-								}
-							}
-						}
-					}
+					scrape_wowi_favorites($html);
 				} else {
 					$addon->available = array();
 					$current = null;
