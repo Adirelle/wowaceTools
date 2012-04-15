@@ -283,6 +283,82 @@ function scrape_wowi_favorites($html) {
 	}
 }
 
+function scrape_wowace_addon_page($addon, $html) {
+
+	// Parse the full HTML page
+	$doc = new DOMDocument('1.0');
+	@$doc->loadHTML($html);
+	$xpath = new DOMXpath($doc);
+	$versions = array();
+	foreach($xpath->query("//table[@class='listing']/tbody/tr/td") as $element) {
+		if(!preg_match('@/tr\[(\d+)\]/td\[\d+\]$@', $element->getNodePath(), $parts)) {
+			continue;
+		}
+		$index = intval($parts[1]);
+		if(!isset($versions[$index])) {
+			$current = array(
+				'kind' => null,
+				'timestamp' => 0,
+				'nolib' => false,
+				'ok' => false,
+				'link' => null,
+				'version' => null,
+				'baseVersion' => null,
+			);
+		} else {
+			$current = $versions[$index];
+		}
+		$value = trim($element->nodeValue);
+		switch($element->getAttribute('class')) {
+			case 'col-file':
+				$value = cleanupVersion($value, $addon);
+				preg_match('@^(.+?)(-nolib)?$@i', $value, $versionParts);
+				$current['version'] = $value;
+				$current['baseVersion'] = $versionParts[1];
+				$current['nolib'] = !empty($versionParts[2]);
+				$current['link'] = 'http://www.wowace.com' . $element->firstChild->getAttribute('href');
+				break;
+			case 'col-type':
+				$current['kind'] = strtolower($value);
+				break;
+			case 'col-status':
+				$current['ok'] = (strtolower($value) == "normal");
+				break;
+			case 'col-date':
+				$current['timestamp'] = intval($element->firstChild->getAttribute('data-epoch'));
+				break;
+		}
+		$versions[$index] = $current;
+	}
+
+	// Filter out the version we found
+	$addon->available = array();
+	foreach($versions as $current) {
+		if(!$current['ok'] || ($current['nolib'] && !@$addon->wantNolib)) {
+			continue;
+		}
+		$kind = $current['kind'] . ($current['nolib'] ? '-nolib' : '');
+		if(!isset($addon->available[$kind]) || $current['timestamp'] > $addon->available[$kind]['timestamp']) {
+			unset($current['ok']);
+			unset($current['nolib']);
+			$addon->available[$kind] = $current;
+		}
+	}
+
+	// Use -nolib wherever available and wanted
+	if($addon->wantNolib) {
+		foreach(array('alpha', 'beta', 'release') as $kind) {
+			$kindNolib = $kind.'-nolib';
+			if(isset($addon->available[$kindNolib])) {
+				if(!isset($addon->available[$kind]) || $addon->available[$kindNolib]['baseVersion'] == $addon->available[$kind]['baseVersion']) {
+					$addon->available[$kind] = $addon->available[$kindNolib];
+				}
+				unset($addon->available[$kindNolib]);
+			}
+		}
+	}
+}
+
 $active = 0;
 $done = 0;
 $lastdone = -1;
@@ -303,57 +379,7 @@ do {
 				if($addon == "wowiFavorites") {
 					scrape_wowi_favorites($html);
 				} else {
-					$addon->available = array();
-					$current = null;
-					foreach(preg_split("/\s*\n\s*/", $html, null, PREG_SPLIT_NO_EMPTY) as $line) {
-						if(preg_match('@<td class="col-file"><a href="(/addons/.+?/)">(.+?)</a></td>@', $line, $parts)) {
-							$version = cleanupVersion($parts[2], $addon);
-							preg_match('@^(.+?)(-nolib)?$@i', $version, $versionParts);
-							$current = array(
-								'version' => $version,
-								'baseVersion' => $versionParts[1],
-								'nolib' => !empty($versionParts[2]),
-								'link' => 'http://www.wowace.com'.$parts[1],
-								'ok' => false,
-							);
-						} elseif($current) {
-							if(preg_match('@<td class="col-type"><.+>(alpha|beta|release)<.+></td>@i', $line, $parts)) {
-								$current['kind'] = strtolower($parts[1]);
-							} elseif(preg_match('@<td class="col-status"><.+>normal<.+></td>@i', $line, $parts)) {
-								$current['ok'] = true;
-							} elseif(preg_match('@<td class="col-date"><.+ data-epoch="(\d+)">.*</span></td>@i', $line, $parts)) {
-								$current['timestamp'] = intval($parts[1]);
-							} elseif(preg_match('@<td class="col-filename">@i', $line)) {
-								if($current['ok'] && isset($current['kind']) && isset($current['timestamp'])) {
-									$kind = $current['kind'];
-									if($current['nolib']) {
-										if($addon->wantNolib) {
-											$kind .= '-nolib';
-										} else {
-											$kind = false;
-										}
-									}
-									if($kind && (!isset($addon->available[$kind]) || $current['timestamp'] > $addon->available[$kind]['timestamp'])) {
-										unset($current['ok']);
-										unset($current['nolib']);
-										$addon->available[$kind] = $current;
-									}
-								}
-								$current = null;
-							}
-						}
-					}
-					if($addon->wantNolib) {
-						foreach(array('alpha', 'beta', 'release') as $kind) {
-							$kindNolib = $kind.'-nolib';
-							if(isset($addon->available[$kindNolib])) {
-								if(!isset($addon->available[$kind]) || $addon->available[$kindNolib]['baseVersion'] == $addon->available[$kind]['baseVersion']) {
-									$addon->available[$kind] = $addon->available[$kindNolib];
-								}
-								unset($addon->available[$kindNolib]);
-							}
-						}
-					}
+					scrape_wowace_addon_page($addon, $html);
 				}
 			} else {
 				$addon->failure = sprintf("Could not retrieve package data for %s: %s", $addon->project, curl_error($mh));
