@@ -113,9 +113,9 @@ while($entry = readdir($dh)) {
 		$modules[] = $entry;
 		continue;
 	}
-	
+
 	$hasAddonData = file_exists($path.'.addon-data.ini');
-	
+
 	if(!$hasAddonData) {
 		// Parse addon TOC file
 		$headers = array();
@@ -137,9 +137,9 @@ while($entry = readdir($dh)) {
 	$addon = new StdClass();
 	$addon->dirs = array();
 	$addon->wantNolib = $wantNolib;
-	
+
 	if(!$hasAddonData) {
-	
+
 		if(isset($headers['X-Curse-Project-ID']) && isset($headers['X-Curse-Packaged-Version'])) {
 			$addon->project = $headers['X-Curse-Project-ID'];
 			$addon->version = @$headers['X-Curse-Packaged-Version'];
@@ -158,13 +158,13 @@ while($entry = readdir($dh)) {
 			$addon->source = "wowi";
 			$addon->kind = null;
 		}
-		
+
 		if(file_exists($path.'.version') && !isset($addon->version)) {
 			$addon->version = trim(file_get_contents($path.'.version'));
 		}
-		
+
 	} else {
-	
+
 		$data = parse_ini_file($path.'.addon-data.ini');
 		if($data) {
 			foreach($data as $key => $value) {
@@ -176,9 +176,9 @@ while($entry = readdir($dh)) {
 			}
 			$addon->data = $data;
 		}
-		
+
 	}
-	
+
 	if(!isset($addon->project)) {
 		$unknowns[] = $entry;
 		continue;
@@ -199,7 +199,7 @@ while($entry = readdir($dh)) {
 		$addon = $addons[$addon->project];
 	}
 	$addon->dirs[] = $entry;
-	
+
 	// Cleanup obsolete files
 	foreach(array(".version", ".alpha", ".beta", ".release") as $obsoleteFile) {
 		if(file_exists($path.$obsoleteFile)) {
