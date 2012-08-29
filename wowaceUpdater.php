@@ -2,6 +2,7 @@
 <?php
 define("DIR_SEP", DIRECTORY_SEPARATOR);
 error_reporting(-1);
+date_default_timezone_set("UTC");
 
 // Check requirements
 $failed = false;
@@ -43,9 +44,6 @@ $maxConcurrent = 10;
 
 // Do not really modify the files
 $dryRun = false;
-
-// The URL of *your* wowinterface favorites RSS feed
-$wowiFavoritesURL = null;
 
 //===== END OF CONFIGURATION =====
 
@@ -243,44 +241,26 @@ $handles = array();
 $queue = array();
 $num = 0;
 
-if($wowiCount > 0 && $wowiFavoritesURL) {
-	$mh = curl_init($wowiFavoritesURL);
+foreach($addons as $key => $addon) {
+	if($addon->source == "wowace") {
+		$url = 'http://www.wowace.com/addons/'.$addon->project.'/files/';
+	} elseif($addon->source == "wowi") {
+		$url = 'http://fs.wowinterface.com/patcher.php?id='.$addon->project;
+	} else {
+		continue;
+	}
+	$mh = curl_init($url);
 	curl_setopt_array($mh, $defaultCurlOptions);
 	$queue[] = $mh;
-	$handles[intval($mh)] = "wowiFavorites";
+	$handles[intval($mh)] = $addon;
 	$num++;
 }
 
-foreach($addons as $key => $addon) {
-	if($addon->source == "wowace") {
-		$mh = curl_init('http://www.wowace.com/addons/'.$addon->project.'/files/');
-		curl_setopt_array($mh, $defaultCurlOptions);
-		$queue[] = $mh;
-		$handles[intval($mh)] = $addon;
-		$num++;
-	}
-}
 
-date_default_timezone_set("UTC");
-
-function scrape_wowi_favorites($html) {
-	global $addons;
-	$rss = simplexml_load_string($html);
-	foreach($rss->channel->item as $item) {
-		if(preg_match('@downloads/info(\d+)-(.+?)\.html@i', $item->link, $parts)) {
-			list(, $project, $version) = $parts;
-			$version = preg_replace("/%([0-9a-f]{2})/ie", 'chr(0x\1)', $version);
-			$project = intval($project);
-			if(isset($addons[$project])) {
-				$addon = $addons[$project];
-				$date = strtotime($item->pubDate);
-				if(!isset($addon->newversion) || $date > $addon->newdate) {
-					$addon->newversion = $version;
-					$addon->newdate = $date;
-				}
-			}
-		}
-	}
+function parse_wowi_patcher_data($addon, $xml) {
+	$doc = simplexml_load_string($xml);
+	$addon->newversion = (string)$doc->Current->UIVersion;
+	$addon->url = (string)$doc->Current->UIFileURL;
 }
 
 function scrape_wowace_addon_page($addon, $html) {
@@ -375,11 +355,11 @@ do {
 			$addon = $handles[intval($mh)];
 			unset($handles[intval($mh)]);
 			if($info['result'] == CURLE_OK) {
-				$html = curl_multi_getcontent($mh);
-				if($addon == "wowiFavorites") {
-					scrape_wowi_favorites($html);
+				$content = curl_multi_getcontent($mh);
+				if($addon->source == "wowi") {
+					parse_wowi_patcher_data($addon, $content);
 				} else {
-					scrape_wowace_addon_page($addon, $html);
+					scrape_wowace_addon_page($addon, $content);
 				}
 			} else {
 				$addon->failure = sprintf("Could not retrieve package data for %s: %s", $addon->project, curl_error($mh));
@@ -440,18 +420,11 @@ foreach($addons as $key => $addon) {
 			$addon->newversion = $selected['version'];
 		}
 	} elseif($addon->source == "wowi") {
-		if(isset($addon->newversion)) {
-			if($addon->newversion != $addon->version) {
-				$addon->url = sprintf("http://fs.wowinterface.com/patcher.php?id=%d", $addon->project);
-			} else {
-				unset($addons[$key]);
-				continue;
-			}
+		if(isset($addon->newversion) && $addon->newversion != $addon->version) {
+			printf("%s: %s ===> %s\n", $addon->name, $addon->version, $addon->newversion);
 		} else {
-			$addon->newversion  = "latest";
-			$addon->url = sprintf("http://fs.wowinterface.com/patcher.php?id=%d", $addon->project);
+			unset($addons[$key]);
 		}
-		printf("%s: %s ===> %s\n", $addon->name, $addon->version, $addon->newversion);
 	}
 }
 
@@ -471,8 +444,8 @@ $num = 0;
 function downloadFile($addon, $url, $filename) {
 	global $handles, $queue, $num, $defaultCurlOptions;
 	$tmpfile = tempnam('/tmp', $filename.'-');
-	register_shutdown_function('unlink', $tmpfile);
-	$fh = fopen($tmpfile, 'w');
+	#register_shutdown_function('unlink', $tmpfile);
+	$fh = fopen($tmpfile, 'wb');
 	if($fh) {
 		$addon->fh = $fh;
 		$addon->origfilename = $filename;
