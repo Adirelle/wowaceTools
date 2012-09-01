@@ -7,18 +7,38 @@
 $LOCALIZATION_FILE = "Localization.lua";
 
 // Wowace API key
-$API_KEY = trim(@file_get_contents(getenv("HOME").DIRECTORY_SEPARATOR.".wowaceApiKey"));
+$HOME = getenv("HOME");
+if(!$HOME) {
+	$HOME = getenv("USERPROFILE");
+}
+$API_KEY = trim(@file_get_contents($HOME.DIRECTORY_SEPARATOR.".wowaceApiKey"));
 
 //------------------------------------------
 
-
 error_reporting(-1);
 
+$WORKDIR = getcwd();
 
-if(!file_exists($LOCALIZATION_FILE)) {
-	print("No Localization.lua file to update !\n");
-	exit(1);
+$ARG1 = $_SERVER["argv"][1];
+if($ARG1) {
+	if(is_dir($ARG1)) {
+		$WORKDIR = $ARG1;
+	} elseif(file_exists($ARG1)) {
+		$WORKDIR = dirname($ARG1);
+	} else {
+		die("Neither a directory nor a file: $ARG1");
+	}
 }
+
+while(!is_file($WORKDIR.DIRECTORY_SEPARATOR.$LOCALIZATION_FILE)) {
+	$WORKDIR = dirname($WORKDIR);
+	if(!is_dir($WORKDIR)) {
+		die("No Localization.lua file to update !\n");
+	}
+}
+
+echo "Working in $WORKDIR\n";
+chdir($WORKDIR);
 
 class MyFilter extends RecursiveFilterIterator {
 	public function accept() {
