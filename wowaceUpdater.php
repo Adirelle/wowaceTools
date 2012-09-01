@@ -610,6 +610,7 @@ foreach($addons as $key => $addon) {
 		}
 	}
 	$za->close();
+	@unlink($addon->filename);
 	printf("done.\n");
 }
 
