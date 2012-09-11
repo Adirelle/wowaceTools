@@ -192,9 +192,10 @@ function updateLocales($parts) {
 	$lines = array();
 	$lines[] = trim($header);
 	$lines[] = "
--- THE END OF THE FILE IS UPDATED BY A SCRIPT
--- ANY CHANGE BELOW THESES LINES WILL BE LOST
--- CHANGES SHOULD BE MADE USING http://www.wowace.com/addons/$project/localization/
+-- THE END OF THE FILE IS UPDATED BY https://github.com/Adirelle/wowaceTools/#updatelocalizationphp.
+-- ANY CHANGE BELOW THESES LINES WILL BE LOST.
+-- UPDATE THE TRANSLATIONS AT http://www.wowace.com/addons/$project/localization/
+-- AND ASK THE AUTHOR TO UPDATE THIS FILE.
 
 -- @noloc[[
 ";
