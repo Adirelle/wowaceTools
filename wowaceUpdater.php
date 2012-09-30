@@ -44,6 +44,9 @@ $maxConcurrent = 50;
 // Do not really modify the files
 $dryRun = false;
 
+// Forcefully updated
+$forceUpdate = false;
+
 //===== END OF CONFIGURATION =====
 
 // Override default configuration
@@ -428,7 +431,7 @@ foreach($addons as $key => $addon) {
 			unset($addons[$key]);
 			continue;
 		}
-		if($addon->version == $selected['version']) {
+		if(!$forceUpdate && $addon->version == $selected['version']) {
 			// Already installed, we're done with this one
 			//printf("%s: current: %s, latest %s: %s (%s), up to date !\n", $addon->name, $addon->version, $kind, $selected['version'], $selected['kind']);
 			unset($addons[$key]);
@@ -440,7 +443,7 @@ foreach($addons as $key => $addon) {
 			$addon->newversion = $selected['version'];
 		}
 	} elseif($addon->source == "wowi") {
-		if(isset($addon->newversion) && $addon->newversion != $addon->version) {
+		if(isset($addon->newversion) && ($forceUpdate || $addon->newversion != $addon->version)) {
 			printf("%s: %s ===> %s\n", $addon->name, $addon->version, $addon->newversion);
 		} else {
 			unset($addons[$key]);
