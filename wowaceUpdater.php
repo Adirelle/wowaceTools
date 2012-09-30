@@ -109,29 +109,23 @@ while($entry = readdir($dh)) {
 		}
 	}
 
-	// Data with mandatory values
-	$data = array(
-		'path'      => $path,
-		'dirs'      => array($entry),
-		'isSource'  => (is_dir($path.'.git') || is_dir($path.'.svn')),
-		'addonData' => null,
-		'pkgmeta'   => null,
-		'toc'       => $toc,
-	);
-
-	// Parse addon data
-	if(file_exists($path.'.addon-data.ini')) {
-		$data['addonData'] = parse_ini_file($path.'.addon-data.ini');
-	}
-
 	// Parse Wowace's .pkgmeta
 	if(file_exists($path.'.pkgmeta')) {
 		require_once(__DIR__.'/lib/sfyaml/lib/sfYaml.php');
-		$data['pkgmeta'] = sfYaml::load(str_replace("\t", "  ", file_get_contents($path.'.pkgmeta')));
+		$pkgmeta = sfYaml::load(str_replace("\t", "  ", file_get_contents($path.'.pkgmeta')));
+	} else {
+		$pkgmeta = null;
 	}
 
-	// Store the datas
-	$directories[$entry] = $data;
+	// Data with mandatory values
+	$directories[$entry] = array(
+		'path'      => $path,
+		'mainDir'   => $entry,
+		'dirs'      => array($entry),
+		'isSource'  => (is_dir($path.'.git') ? 'git' : (is_dir($path.'.svn') ? 'svn' : false)),
+		'pkgmeta'   => empty($pkgmeta) ? null : $pkgmeta,
+		'toc'       => $toc,
+	);
 }
 closedir($dh);
 
@@ -146,8 +140,11 @@ foreach($directories as $dir => $data) {
 	}
 }
 
-// Merge dirs unsing .pkgmetas
+// Merge dirs using .pkgmeta
 foreach($directories as $entry => $data) {
+	if(isset($data['pkgmeta']['package-as'])) {
+		$directories[$entry]['mainDir'] = $data['pkgmeta']['package-as'];
+	}
 	if(isset($data['pkgmeta']['move-folders'])) {
 		foreach($data['pkgmeta']['move-folders'] as $target) {
 			if(isset($directories[$target])) {
@@ -162,71 +159,96 @@ foreach($directories as $entry => $data) {
 
 $wowaceCount = 0;
 $wowiCount = 0;
-$modules = array();
 $sources = array();
-$frozen = array();
 $unknowns = array();
 
 foreach($directories as $entry => $data) {
 	$path = $data['path'];
 	$headers = $data['toc'];
 
-	if(isset($headers['RequiredDeps']) || isset($headers['Dependencies']) || is_link($path)) {
-		$modules[] = $entry;
-		continue;
-	} elseif($data['isSource']) {
-		$sources[] = $entry;
-		continue;
-	} elseif(file_exists($path.'.freeze')) {
-		$frozen[] = $entry;
-		continue;
-	}
-
 	$addon = new StdClass();
+	$addon->mainDir = $data['mainDir'];
 	$addon->dirs = $data['dirs'];
 	$addon->wantNolib = $wantNolib;
+	$addon->kind = @$headers['X-WU-Kind'];
+	$addon->source = @$headers['X-WU-Source'];
+	$addon->project = @$headers['X-WU-Project'];
+	$addon->name = (@$headers['X-WU-Name'] ?: @$headers['Title']) ?: $data['mainDir'];
+	$addon->version = @$headers['Version'];
 
-	if(empty($data['addonData'])) {
+	if(isset($headers['X-Curse-Project-ID']) && isset($headers['X-Curse-Packaged-Version'])) {
+		$addon->source = "wowace";
+		$addon->project = $headers['X-Curse-Project-ID'];
+		$addon->version = $headers['X-Curse-Packaged-Version'];
+		$addon->name = $headers['X-Curse-Project-Name'];
+	} elseif(isset($headers['X-WoWI-ID'])) {
+		$addon->project = $headers['X-WoWI-ID'];
+		$addon->source = "wowi";
+	}
 
-		if(isset($headers['X-Curse-Project-ID']) && isset($headers['X-Curse-Packaged-Version'])) {
-			$addon->project = $headers['X-Curse-Project-ID'];
-			$addon->version = @$headers['X-Curse-Packaged-Version'];
-			$addon->name = isset($headers['X-Curse-Project-Name']) ? $headers['X-Curse-Project-Name'] : $entry;
-			$addon->source = "wowace";
-		} elseif(isset($headers['X-WoWI-ID'])) {
-			$addon->project = $headers['X-WoWI-ID'];
-			$addon->name = $entry;
-			$addon->source = "wowi";
-			$addon->kind = null;
+	if(isset($headers['X-WU-Version'])) {
+		$addon->version = $headers['X-WU-Version'];
+	}
+
+	if($data['isSource'] == 'git') {
+		$addon->source = "git";
+		$sources[] = $addon;
+		$gitDir = escapeshellarg("$baseDir/".$data['mainDir']."/.git");
+		$gitCmd = "git --git-dir=$gitDir";
+		$output = shell_exec("$gitCmd remote -v");
+		if($output && preg_match('@wowace\.com\:wow/([^/]+)/mainline@ms', $output, $parts)) {
+			$addon->project = $parts[1];
+			$addon->version = trim(shell_exec("$gitCmd rev-parse --abbrev-ref HEAD"));
 		}
 
-	} else {
-		foreach($data['addonData'] as $key => $value) {
-			$addon->$key = $value;
+	} elseif($data['isSource'] == 'svn') {
+		$addon->source = "svn";
+		$sources[] = $addon;
+		$svnDir = escapeshellarg("$baseDir/".$data['mainDir']);
+		$output = shell_exec("svn info --xml $svnDir");
+		if($output) {
+			$xml = simplexml_load_string($output);
+			$url = strval($xml->entry->repository->root);
+			if(preg_match('@wowace\.com/wow/([^/]+)/mainline@', $url, $parts)) {
+				$addon->project = $parts[1];
+				$addon->version = 'r'.strval($xml->entry['revision']);
+			}
 		}
 	}
 
-	if(!isset($addon->project)) {
-		$unknowns[] = $entry;
+	// Ignore unidentified projects
+	if(empty($addon->project)) {
+		if($data['isSource']) {
+			$sources[] = $entry;
+		} else {
+			$unknowns[] = $entry;
+		}
 		continue;
 	}
+
+	// Cleanup the version
 	if(isset($addon->version)) {
 		$addon->version = cleanupVersion($addon->version, $addon);
 	} else {
 		$addon->version = "unknown";
 	}
+
 	if(!isset($addons[$addon->project])) {
 		$addons[$addon->project] = $addon;
 		if($addon->source == "wowace") {
 			$wowaceCount++;
-		} else {
+		} elseif($addon->source == "wowi") {
 			$wowiCount++;
 		}
 	} else {
 		$addon = $addons[$addon->project];
 	}
+
+	// Merge directory list
 	if(!in_array($entry, $addon->dirs)) {
-		$addon->dirs[] = $entry;
+		$addon->dirs = array_unique(array_merge($addon->dirs, $data['dirs']));
+	}
+}
 	}
 }
 
@@ -235,25 +257,19 @@ function addonSort($a, $b) {
 }
 uasort($addons, "addonSort");
 
-//sort($frozen);
 //sort($sources);
-//sort($modules);
 sort($unknowns);
 
 printf("Found %d addons:
 - wowace: %d
 - wowinterface: %d
-- frozen: %d
 - sources: %d
-- modules: %d
 - unknown: %d %s
 ",
-	count($addons) + count($frozen) + count($sources) + count($modules) + count($modules),
+	count($addons) + count($sources) + count($unknowns),
 	$wowaceCount,
 	$wowiCount,
-	count($frozen),
 	count($sources),
-	count($modules),
 	count($unknowns), count($unknowns) > 0 ? "[ ".join(", ", $unknowns)." ]" : ""
 );
 
@@ -270,6 +286,7 @@ foreach($addons as $key => $addon) {
 	} elseif($addon->source == "wowi") {
 		$url = 'http://fs.wowinterface.com/patcher.php?id='.$addon->project;
 	} else {
+		unset($addons[$key]);
 		continue;
 	}
 	$mh = curl_init($url);
