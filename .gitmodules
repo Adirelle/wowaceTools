@@ -1,0 +1,3 @@
+[submodule "lib/sfyaml"]
+	path = lib/sfyaml
+	url = https://github.com/fabpot/yaml.git

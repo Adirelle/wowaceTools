@@ -39,7 +39,7 @@ $defaultKind = 'beta';
 $wantNolib = true;
 
 // Number of concurrent requests
-$maxConcurrent = 10;
+$maxConcurrent = 50;
 
 // Do not really modify the files
 $dryRun = false;
@@ -83,6 +83,79 @@ function pruneFailedAddons() {
 	}
 }
 
+// Scan the directories
+$directories = array();
+$dh = opendir($baseDir);
+while($entry = readdir($dh)) {
+	$path = "$baseDir/$entry/";
+
+	// Skip anything that is not an addon
+	if(!is_dir("$baseDir/$entry") || !file_exists("$path$entry.toc") || substr($entry, 0, 10) == "Blizzard_") {
+		continue;
+	}
+
+	// Parse addon TOC file
+	$toc = array();
+	foreach(file($path.$entry.'.toc') as $line) {
+		$line = trim($line);
+		if(preg_match('/^[\x{fffe}\x{feff}]?##\s*(.+)\s*:\s*(.+)\s*$/ui', $line, $parts)) {
+			$toc[$parts[1]] = $parts[2];
+		} else {
+			$toc[] = $line;
+		}
+	}
+
+	// Data with mandatory values
+	$data = array(
+		'path'      => $path,
+		'dirs'      => array($entry),
+		'isSource'  => (is_dir($path.'.git') || is_dir($path.'.svn')),
+		'addonData' => null,
+		'pkgmeta'   => null,
+		'toc'       => $toc,
+	);
+
+	// Parse addon data
+	if(file_exists($path.'.addon-data.ini')) {
+		$data['addonData'] = parse_ini_file($path.'.addon-data.ini');
+	}
+
+	// Parse Wowace's .pkgmeta
+	if(file_exists($path.'.pkgmeta')) {
+		require_once(__DIR__.'/lib/sfyaml/lib/sfYaml.php');
+		$data['pkgmeta'] = sfYaml::load(str_replace("\t", "  ", file_get_contents($path.'.pkgmeta')));
+	}
+
+	// Store the datas
+	$directories[$entry] = $data;
+}
+closedir($dh);
+
+// Merge dirs with "X-Part-Of" headers
+foreach($directories as $dir => $data) {
+	if(isset($data['toc']['X-Part-Of'])) {
+		$target = $data['toc']['X-Part-Of'];
+		if(isset($directories[$target])) {
+			$directories[$target]['dirs'][] = $dir;
+			unset($directories[$dir]);
+		}
+	}
+}
+
+// Merge dirs unsing .pkgmetas
+foreach($directories as $entry => $data) {
+	if(isset($data['pkgmeta']['move-folders'])) {
+		foreach($data['pkgmeta']['move-folders'] as $target) {
+			if(isset($directories[$target])) {
+				if(!in_array($target, $directories[$entry]['dirs'])) {
+					$directories[$entry]['dirs'][] = $target;
+				}
+				unset($directories[$target]);
+			}
+		}
+	}
+}
+
 $wowaceCount = 0;
 $wowiCount = 0;
 $modules = array();
@@ -90,65 +163,32 @@ $sources = array();
 $frozen = array();
 $unknowns = array();
 
-// Build the list of updatable addons from the directory
-$dh = opendir($baseDir);
-while($entry = readdir($dh)) {
-	$path = $baseDir.DIR_SEP.$entry.DIR_SEP;
-	if(!is_dir($baseDir.DIR_SEP.$entry) || !file_exists($path.$entry.'.toc')) {
-		continue;
-	}
+foreach($directories as $entry => $data) {
+	$path = $data['path'];
+	$headers = $data['toc'];
 
-	if(file_exists($path.'.git') || file_exists($path.'.svn')) {
-		$sources[] = $entry;
-		continue;
-	}
-
-	if(file_exists($path.'.freeze')) {
-		$frozen[] = $entry;
-		continue;
-	} elseif(is_link($baseDir.DIR_SEP.$entry)) {
+	if(isset($headers['RequiredDeps']) || isset($headers['Dependencies']) || is_link($path)) {
 		$modules[] = $entry;
 		continue;
-	}
-
-	$hasAddonData = file_exists($path.'.addon-data.ini');
-
-	if(!$hasAddonData) {
-		// Parse addon TOC file
-		$headers = array();
-		$fh = fopen($path.$entry.'.toc', 'r');
-		while($line = fgets($fh)) {
-			$line = trim($line);
-			if(preg_match('/^##\s*(.+)\s*:\s*(.+)\s*$/i', $line, $parts)) {
-				$headers[$parts[1]] = $parts[2];
-			}
-		}
-		fclose($fh);
-
-		if(!empty($headers['RequiredDeps']) || !empty($headers['Dependencies'])) {
-			$modules[] = $entry;
-			continue;
-		}
+	} elseif($data['isSource']) {
+		$sources[] = $entry;
+		continue;
+	} elseif(file_exists($path.'.freeze')) {
+		$frozen[] = $entry;
+		continue;
 	}
 
 	$addon = new StdClass();
-	$addon->dirs = array();
+	$addon->dirs = $data['dirs'];
 	$addon->wantNolib = $wantNolib;
 
-	if(!$hasAddonData) {
+	if(empty($data['addonData'])) {
 
 		if(isset($headers['X-Curse-Project-ID']) && isset($headers['X-Curse-Packaged-Version'])) {
 			$addon->project = $headers['X-Curse-Project-ID'];
 			$addon->version = @$headers['X-Curse-Packaged-Version'];
 			$addon->name = isset($headers['X-Curse-Project-Name']) ? $headers['X-Curse-Project-Name'] : $entry;
 			$addon->source = "wowace";
-			if(file_exists($path.'.alpha')) {
-				$addon->kind = 'alpha';
-			} elseif(file_exists($path.'.beta')) {
-				$addon->kind = 'beta';
-			} elseif(file_exists($path.'.release')) {
-				$addon->kind = 'release';
-			}
 		} elseif(isset($headers['X-WoWI-ID'])) {
 			$addon->project = $headers['X-WoWI-ID'];
 			$addon->name = $entry;
@@ -156,24 +196,10 @@ while($entry = readdir($dh)) {
 			$addon->kind = null;
 		}
 
-		if(file_exists($path.'.version') && !isset($addon->version)) {
-			$addon->version = trim(file_get_contents($path.'.version'));
-		}
-
 	} else {
-
-		$data = parse_ini_file($path.'.addon-data.ini');
-		if($data) {
-			foreach($data as $key => $value) {
-				if(isset($addon->$key) && $addon->$key == $value) {
-					unset($data[$key]);
-				} else {
-					$addon->$key = $value;
-				}
-			}
-			$addon->data = $data;
+		foreach($data['addonData'] as $key => $value) {
+			$addon->$key = $value;
 		}
-
 	}
 
 	if(!isset($addon->project)) {
@@ -195,16 +221,10 @@ while($entry = readdir($dh)) {
 	} else {
 		$addon = $addons[$addon->project];
 	}
-	$addon->dirs[] = $entry;
-
-	// Cleanup obsolete files
-	foreach(array(".version", ".alpha", ".beta", ".release") as $obsoleteFile) {
-		if(file_exists($path.$obsoleteFile)) {
-			@unlink($path.$obsoleteFile);
-		}
+	if(!in_array($entry, $addon->dirs)) {
+		$addon->dirs[] = $entry;
 	}
 }
-closedir($dh);
 
 function addonSort($a, $b) {
 	return strcasecmp($a->name, $b->name);
