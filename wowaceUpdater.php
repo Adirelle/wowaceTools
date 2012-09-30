@@ -249,6 +249,27 @@ foreach($directories as $entry => $data) {
 		$addon->dirs = array_unique(array_merge($addon->dirs, $data['dirs']));
 	}
 }
+
+// Add libraries from .pkgmeta
+foreach($directories as $entry => $data) {
+	if(isset($data['pkgmeta']['externals'])) {
+		foreach($data['pkgmeta']['externals'] as $external) {
+			$url = is_array($external) ? $external['url'] : $external;
+			if(preg_match('@wowace\.com[/:]wow/([^/]+)/mainline@', $url, $parts)) {
+				$id = $parts[1];
+				if(!isset($addons[$id])) {
+					echo "$entry => ${parts[1]}\n";
+					$addon = new StdClass();
+					$addon->dirs = array();
+					$addon->wantNolib = $wantNolib;
+					$addon->source = 'wowace';
+					$addon->project = $id;
+					$addon->name = $id;
+					$addon->version = null;
+					$addons[$id] = $addon;
+				}
+			}
+		}
 	}
 }
 
