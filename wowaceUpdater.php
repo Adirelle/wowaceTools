@@ -607,6 +607,9 @@ foreach($addons as $key => $addon) {
 		if(preg_match('@^([^/]+)/\1\.toc$@i', $entry['name'], $parts)) {
 			file_put_contents($baseDir."/".$parts[1]."/.addon-data.ini", $dataStr);
 		}
+		if($entry['mtime']) {
+			touch("$baseDir/".$entry['name'], $entry['mtime']);
+		}
 	}
 	$za->close();
 	@unlink($addon->filename);
