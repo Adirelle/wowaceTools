@@ -1,6 +1,5 @@
 #!php -f
 <?php
-define("DIR_SEP", DIRECTORY_SEPARATOR);
 error_reporting(-1);
 date_default_timezone_set("UTC");
 
@@ -31,7 +30,7 @@ define('HOME', isset($_SERVER["USERPROFILE"]) ? $_SERVER["USERPROFILE"] : $_SERV
 $baseDir = "/home/guillaume/AddOns";
 
 // This is where old versions will be moved (no pruning)
-$backupDir = HOME.DIR_SEP.".addonBackup";
+$backupDir = HOME."/.addonBackup";
 
 // Must be one of 'release', 'beta' or 'alpha'.
 $defaultKind = 'beta';
@@ -48,8 +47,8 @@ $dryRun = false;
 //===== END OF CONFIGURATION =====
 
 // Override default configuration
-if(file_exists(HOME.DIR_SEP.'.wowaceUpdater.conf')) {
-	@include_once(HOME.DIR_SEP.'.wowaceUpdater.conf');
+if(file_exists(HOME.'/.wowaceUpdater.conf')) {
+	@include_once(HOME.'/.wowaceUpdater.conf');
 }
 
 if($backupDir) {
@@ -560,16 +559,16 @@ foreach($addons as $key => $addon) {
 		continue;
 	}
 	if($backupDir) {
-		$backupPath = $backupDir.DIR_SEP.$addon->project.'-'.$addon->version;
+		$backupPath = "$backupDir/".$addon->project.'-'.$addon->version;
 		if(!file_exists($backupPath)) {
 			if(mkdir($backupPath, 0755, true)) {
 				$failed = false;
 				$dirs = $addon->dirs;
 				foreach($dirs as $i => $dir) {
-					if(!rename($baseDir.DIR_SEP.$dir, $backupPath.DIR_SEP.$dir)) {
+					if(!rename("$baseDir/$dir", "$backupPath/$dir")) {
 						printf("Cannot backup %s, skipped.", $addon->name);
 						for($j = 0; $j < $i; $j++) {
-							@rename($backupPath.DIR_SEP.$dirs[$j], $baseDir.DIR_SEP.$dirs[$j]);
+							@rename($backupPath."/".$dirs[$j], "$baseDir/".$dirs[$j]);
 						}
 						@rmdir($backupPath);
 						$failed = true;
@@ -606,7 +605,7 @@ foreach($addons as $key => $addon) {
 	for($index = 0; $index < $za->numFiles; $index++) {
 		$entry = $za->statIndex($index);
 		if(preg_match('@^([^/]+)/\1\.toc$@i', $entry['name'], $parts)) {
-			file_put_contents($baseDir.DIR_SEP.$parts[1].DIR_SEP.'.addon-data.ini', $dataStr);
+			file_put_contents($baseDir."/".$parts[1]."/.addon-data.ini", $dataStr);
 		}
 	}
 	$za->close();
