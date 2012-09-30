@@ -60,7 +60,7 @@ if($backupDir) {
 	}
 } else {
 	print("WARNING: backup disabled !\n");
-	$backupDir = false;
+	$backupDir = null;
 }
 
 $defaultCurlOptions = array(
@@ -570,6 +570,31 @@ if(count($addons) == 0) {
 	exit(0); // Done
 }
 
+// header from addon data mapping
+$headerMap = array(
+	'Project' => 'project',
+	'Name'    => 'name',
+	'Source'  => 'source',
+	'Version' => 'newversion',
+	'Kind'    => 'kind'
+);
+
+function rrmdir($dir) {
+	if(is_dir($dir)) {
+		$iterator = new RecursiveIteratorIterator(new RecursiveDirectoryIterator($dir), RecursiveIteratorIterator::CHILD_FIRST | FilesystemIterator::KEY_AS_PATHNAME);
+		foreach($iterator as $path => $info) {
+			if($info->isDir()) {
+				rmdir($path);
+			} else {
+				unlink($path);
+			}
+		}
+		rmdir($dir);
+	} elseif(file_exists($dir)) {
+		unlink($dir);
+	}
+}
+
 // Backup the old files and install the new ones
 foreach($addons as $key => $addon) {
 	printf("Installing %s %s: ", $addon->name, $addon->newversion); flush();
@@ -582,62 +607,107 @@ foreach($addons as $key => $addon) {
 		printf("Cannot open the zip archive %s: %d !\n", $addon->filename, $err);
 		continue;
 	}
-	if($backupDir) {
-		$backupPath = "$backupDir/".$addon->project.'-'.$addon->version;
-		if(!file_exists($backupPath)) {
-			if(mkdir($backupPath, 0755, true)) {
-				$failed = false;
-				$dirs = $addon->dirs;
-				foreach($dirs as $i => $dir) {
-					if(!rename("$baseDir/$dir", "$backupPath/$dir")) {
-						printf("Cannot backup %s, skipped.", $addon->name);
-						for($j = 0; $j < $i; $j++) {
-							@rename($backupPath."/".$dirs[$j], "$baseDir/".$dirs[$j]);
-						}
-						@rmdir($backupPath);
-						$failed = true;
-						break;
-					}
-				}
-				if($failed) continue;
-			} else {
-				printf("Cannot backup %s, skipped.", $addon->name);
-				continue;
-			}
+
+	// Extract the zip files into a temporary directory
+	$extractDir = "$baseDir/".$addon->source."-".$addon->project."-new";
+	register_shutdown_function("rrmdir", $extractDir);
+	if(!$za->extractTo($extractDir)) {
+		printf("Cannot extract file from the zip archive %s !\n", $addon->filename);
+		$za->close();
+		continue;
+	}
+
+	// Build additioanl TOC data
+	$headers = array();
+	foreach($headerMap as $hdr => $prop) {
+		if(!empty($addon->$prop)) {
+			$headers[] = sprintf("## X-WU-%s: %s", $hdr, $addon->$prop);
 		}
 	}
-	$za->extractTo($baseDir);
-
-	$data = isset($addon->data) ? $addon->data : array();
-	$data['project'] = $addon->project;
-	$data['name'] = $addon->name;
-	$data['source'] = $addon->source;
-	$data['version'] = $addon->newversion;
-	if(!empty($addon->kind)) {
-		$data['kind'] = $addon->kind;
+	if(!empty($headers)) {
+		$headers = "\n# Added by ".basename(__FILE__).":\n".join("\n", $headers)."\n";
+	} else {
+		$headers = null;
 	}
-	$lines = array();
-	foreach($data as $key=>$value) {
-		if(is_int($value)) {
-			$lines[] = sprintf("%s=%d\n", $key, $value);
-		} else {
-			$lines[] = sprintf("%s=\"%s\"\n", $key, $value);
-		}
-	}
-	$dataStr = join("", $lines);
 
+	// Update extracted files
 	for($index = 0; $index < $za->numFiles; $index++) {
 		$entry = $za->statIndex($index);
-		if(preg_match('@^([^/]+)/\1\.toc$@i', $entry['name'], $parts)) {
-			file_put_contents($baseDir."/".$parts[1]."/.addon-data.ini", $dataStr);
+		if($headers && preg_match('@^([^/]+)/\1\.toc$@i', $entry['name'])) {
+			file_put_contents("$extractDir/".$entry['name'], $headers, FILE_APPEND);
 		}
 		if($entry['mtime']) {
-			touch("$baseDir/".$entry['name'], $entry['mtime']);
+			@touch("$extractDir/".$entry['name'], $entry['mtime']);
 		}
 	}
 	$za->close();
 	@unlink($addon->filename);
-	printf("done.\n");
+
+	// Track status and installed/saved files
+	$failed = false;
+	$saveDir = "$baseDir/".$addon->source."-".$addon->project."-save";
+	$saved = array();
+	$installed = array();
+
+	// Move the old files out of the way
+	if(mkdir($saveDir)) {
+		foreach($addon->dirs as $dir) {
+			if(rename("$baseDir/$dir", "$saveDir/$dir")) {
+				$saved[] = $dir;
+			} else {
+				$failed = true;
+				break;
+			}
+		}
+	} else {
+		$failed = true;
+	}
+
+	// Move the new files in place
+	if(!$failed) {
+		foreach(new FilesystemIterator($extractDir) as $path => $info) {
+			$dir = $info->getFilename();
+			if(file_exists("$baseDir/$dir")) {
+				if(rename("$baseDir/$dir", "$saveDir/$dir")) {
+					$saved[] = $dir;
+				} else {
+					$failed = true;
+					break;
+				}
+			}
+			if(rename($path, "$baseDir/$dir")) {
+				$installed[]= $dir;
+			} else {
+				$failed = true;
+				break;
+			}
+		}
+	}
+
+	if($failed) {
+		echo "FAILED !\n";
+		// Put all back in place
+		foreach($installed as $dir) {
+			rrmdir("$baseDir/$dir");
+		}
+		foreach($saved as $dir) {
+			rename("$saveDir/$dir", "$baseDir/$dir");
+		}
+	} else {
+		echo "done.\n";
+
+		// Backup
+		if($backupDir) {
+			$backupDest = "$backupDir/".$addon->project."-".$addon->version;
+			if(!rename($saveDir, $backupDest)) {
+				echo "Could not move old directory $saveDir to backup area\n";
+			}
+		}
+	}
+
+	// Cleanup
+	rrmdir($saveDir);
+
 }
 
 ?>
