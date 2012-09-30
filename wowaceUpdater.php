@@ -98,8 +98,9 @@ while($entry = readdir($dh)) {
 	$toc = array();
 	foreach(file($path.$entry.'.toc') as $line) {
 		$line = trim($line);
-		if(preg_match('/^[\x{fffe}\x{feff}]?##\s*(.+)\s*:\s*(.+)\s*$/ui', $line, $parts)) {
-			$toc[$parts[1]] = $parts[2];
+		if(preg_match('/^[\x{fffe}\x{feff}]?##\s*(\S+)\s*:\s*(.+)\s*$/ui', $line, $parts)) {
+			list(, $name, $value) = $parts;
+			$toc[$name] = $value;
 		} else {
 			$toc[] = $line;
 		}
