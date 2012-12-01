@@ -716,9 +716,14 @@ foreach($addons as $key => $addon) {
 		foreach(new FilesystemIterator($extractDir) as $path => $info) {
 			$dir = $info->getFilename();
 			if(file_exists("$baseDir/$dir")) {
-				if(rename("$baseDir/$dir", "$saveDir/$dir")) {
+				if(is_dir("$baseDir/$dir/.svn") || is_dir("$baseDir/$dir/.git") ) {
+					echo "Will not overwrite source directory $dir\n";
+					$failed = true;
+					break;
+				} elseif(@rename("$baseDir/$dir", "$saveDir/$dir")) {
 					$saved[] = $dir;
 				} else {
+					echo "Could not backup $dir\n";
 					$failed = true;
 					break;
 				}
