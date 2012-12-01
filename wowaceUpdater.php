@@ -627,7 +627,7 @@ $headerMap = array(
 
 function rrmdir($dir) {
 	if(is_dir($dir)) {
-		$iterator = new RecursiveIteratorIterator(new RecursiveDirectoryIterator($dir), RecursiveIteratorIterator::CHILD_FIRST | FilesystemIterator::KEY_AS_PATHNAME);
+		$iterator = new RecursiveIteratorIterator(new RecursiveDirectoryIterator($dir), RecursiveIteratorIterator::CHILD_FIRST);
 		foreach($iterator as $path => $info) {
 			if($info->isDir()) {
 				rmdir($path);
