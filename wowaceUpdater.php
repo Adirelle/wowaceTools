@@ -20,6 +20,14 @@ foreach(array('ZIP', 'cURL', 'SimpleXML') as $ext) {
 		}
 	}
 }
+if(NULL === shell_exec("git --version")) {
+	echo "Cannot execute git !\n";
+	$failed = true;
+}
+if(NULL === shell_exec("svn --version")) {
+	echo "Cannot execute svn !\n";
+	$failed = true;
+}
 if($failed) exit(1);
 
 define('HOME', isset($_SERVER["USERPROFILE"]) ? $_SERVER["USERPROFILE"] : $_SERVER["HOME"]);
