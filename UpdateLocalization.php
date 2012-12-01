@@ -24,7 +24,7 @@ error_reporting(-1);
 
 $WORKDIR = getcwd();
 
-$ARG1 = $_SERVER["argv"][1];
+$ARG1 = @$_SERVER["argv"][1];
 if($ARG1) {
 	if(is_dir($ARG1)) {
 		$WORKDIR = $ARG1;
