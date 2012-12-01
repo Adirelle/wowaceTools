@@ -644,10 +644,7 @@ function rrmdir($dir) {
 // Backup the old files and install the new ones
 foreach($addons as $key => $addon) {
 	printf("Installing %s %s: ", $addon->name, $addon->newversion); flush();
-	if($dryRun) {
-		echo "dry-run, skipped !\n"; flush();
-		continue;
-	}
+
 	$za = new ZipArchive();
 	if(TRUE !== ($err = $za->open($addon->filename))) {
 		printf("Cannot open the zip archive %s: %d !\n", $addon->filename, $err);
@@ -688,6 +685,11 @@ foreach($addons as $key => $addon) {
 	}
 	$za->close();
 	@unlink($addon->filename);
+
+	if($dryRun) {
+		echo "dry-run, skipped !\n"; flush();
+		continue;
+	}
 
 	// Track status and installed/saved files
 	$failed = false;
