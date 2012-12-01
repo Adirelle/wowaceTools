@@ -690,7 +690,7 @@ foreach($addons as $key => $addon) {
 	// Move the old files out of the way
 	if(mkdir($saveDir)) {
 		foreach($addon->dirs as $dir) {
-			if(rename("$baseDir/$dir", "$saveDir/$dir")) {
+			if(@rename("$baseDir/$dir", "$saveDir/$dir")) {
 				$saved[] = $dir;
 			} else {
 				$failed = true;
@@ -713,9 +713,10 @@ foreach($addons as $key => $addon) {
 					break;
 				}
 			}
-			if(rename($path, "$baseDir/$dir")) {
+			if(@rename($path, "$baseDir/$dir")) {
 				$installed[]= $dir;
 			} else {
+				echo "Could not install $dir\n";
 				$failed = true;
 				break;
 			}
@@ -729,7 +730,9 @@ foreach($addons as $key => $addon) {
 			rrmdir("$baseDir/$dir");
 		}
 		foreach($saved as $dir) {
-			rename("$saveDir/$dir", "$baseDir/$dir");
+			if(!@rename("$saveDir/$dir", "$baseDir/$dir")) {
+				echo "Could not restore $dir !\n";
+			}
 		}
 	} else {
 		echo "done.\n";
@@ -737,7 +740,7 @@ foreach($addons as $key => $addon) {
 		// Backup
 		if($backupDir) {
 			$backupDest = "$backupDir/".$addon->project."-".$addon->version;
-			if(!rename($saveDir, $backupDest)) {
+			if(!@rename($saveDir, $backupDest)) {
 				echo "Could not move old directory $saveDir to backup area\n";
 			}
 		}
