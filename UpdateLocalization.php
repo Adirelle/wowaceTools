@@ -11,7 +11,12 @@ $HOME = getenv("HOME");
 if(!$HOME) {
 	$HOME = getenv("USERPROFILE");
 }
-$API_KEY = trim(@file_get_contents($HOME.DIRECTORY_SEPARATOR.".wowaceApiKey"));
+$API_KEY = trim(@file_get_contents($HOME."/.wowaceApiKey"));
+
+if(!$API_KEY) {
+	echo "Cannot find API key in $HOME/.wowaceApiKey\n";
+	exit(1);
+}
 
 //------------------------------------------
 
