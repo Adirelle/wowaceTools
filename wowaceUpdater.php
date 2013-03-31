@@ -512,7 +512,7 @@ $num = 0;
 
 function downloadFile($addon, $url, $filename) {
 	global $handles, $queue, $num, $defaultCurlOptions;
-	$tmpfile = tempnam('/tmp', $filename.'-');
+	$tmpfile = tempnam('/tmp', preg_replace('/\W+/', '_', $filename).'-');
 	#register_shutdown_function('unlink', $tmpfile);
 	$fh = fopen($tmpfile, 'wb');
 	if($fh) {
