@@ -360,12 +360,14 @@ function scrape_wowace_addon_page($addon, $html) {
 		$value = trim($element->nodeValue);
 		switch($element->getAttribute('class')) {
 			case 'col-file':
-				$value = cleanupVersion($value, $addon);
-				preg_match('@^(.+?)(-nolib)?$@i', $value, $versionParts);
-				$current['version'] = $value;
-				$current['baseVersion'] = $versionParts[1];
-				$current['nolib'] = !empty($versionParts[2]);
-				$current['link'] = 'http://www.wowace.com' . $element->firstChild->getAttribute('href');
+				$version = cleanupVersion($value, $addon);
+				if(!empty($version)) {
+					preg_match('@^(.+?)(-nolib)?$@i', $version, $versionParts);
+					$current['version'] = $version;
+					$current['baseVersion'] = $versionParts[1];
+					$current['nolib'] = !empty($versionParts[2]);
+					$current['link'] = 'http://www.wowace.com' . $element->firstChild->getAttribute('href');
+				}
 				break;
 			case 'col-type':
 				$current['kind'] = strtolower($value);
@@ -377,7 +379,9 @@ function scrape_wowace_addon_page($addon, $html) {
 				$current['timestamp'] = intval($element->firstChild->getAttribute('data-epoch'));
 				break;
 		}
-		$versions[$index] = $current;
+		if(!empty($current['version'])) {
+			$versions[$index] = $current;
+		}
 	}
 
 	// Filter out the version we found
