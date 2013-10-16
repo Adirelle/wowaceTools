@@ -79,7 +79,7 @@ $defaultCurlOptions = array(
 );
 
 function cleanupVersion($version, $addon)  {
-	return preg_replace('/^('.preg_quote($addon->name).'|'.preg_quote($addon->project).')\s*/i', '', $version);
+	return preg_replace('/^('.preg_quote($addon->name).'|'.preg_quote($addon->project).')[\s\-]*/i', '', $version);
 }
 
 $addons = array();
