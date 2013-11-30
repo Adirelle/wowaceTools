@@ -120,7 +120,12 @@ while($entry = readdir($dh)) {
 	// Parse Wowace's .pkgmeta
 	if(file_exists($path.'.pkgmeta')) {
 		require_once(__DIR__.'/lib/sfyaml/lib/sfYaml.php');
-		$pkgmeta = sfYaml::load(str_replace("\t", "  ", file_get_contents($path.'.pkgmeta')));
+		try {
+			$pkgmeta = sfYaml::load(str_replace("\t", "  ", file_get_contents($path.'.pkgmeta')));
+		} catch(\InvalidArgumentException $e) {
+			printf("sfYaml error in %s: %s\n", $path.'.pkgmeta', $e->getMessage());
+			continue;
+		}
 	} else {
 		$pkgmeta = null;
 	}
