@@ -149,7 +149,7 @@ function updateLocales($parts) {
 	// Fetch strings to wowace
 	if($API_KEY) {
 		$CURLEXT = strtoupper(substr(PHP_OS, 0, 3)) === 'WIN' ? 'php_curl' : 'curl';
-		if(extension_loaded($CURLEXT) || dl($CURLEXT)) {
+		if(extension_loaded('curl') || dl($CURLEXT)) {
 			print("Importing enUS strings into wowace localization system: "); flush();
 			$ch = curl_init("http://www.wowace.com/addons/$project/localization/import/?api-key=".$API_KEY);
 			curl_setopt_array($ch, array(
@@ -166,10 +166,15 @@ function updateLocales($parts) {
 			if(curl_exec($ch) === FALSE) {
 				print(curl_error($ch)."\n");
 			} else {
-				print("done.\n");
+				$http_status = curl_getinfo($ch, CURLINFO_HTTP_CODE);
+				print("done, status $http_status.\n");
 			}
 			curl_close($ch);
+		} else {
+			print("Can't load $CURLEXT, upload skipped.\n");
 		}
+	} else {
+		print("No API key, upload skipped.\n");
 	}
 
 	print("Updating $LOCALIZATION_FILE:\n");
